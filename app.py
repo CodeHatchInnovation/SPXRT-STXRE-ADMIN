@@ -46,20 +46,32 @@ except Exception as e:
 
 @app.route('/api/productos', methods=['GET'])
 def obtener_productos():
+    global db
     try:
+        # Intento de reinicialización de emergencia si db quedó en None
         if not db:
-            return jsonify({"error": "La base de datos no está disponible. Revisa la configuración de Firebase."}), 503
+            try:
+                db = firestore.client()
+            except Exception as init_err:
+                return jsonify({"error": f"Firestore no inicializado. Detalle: {str(init_err)}"}), 503
             
         productos_ref = db.collection('productos')
         docs = productos_ref.stream()
+        
         lista_productos = []
         for doc in docs:
             data = doc.to_dict()
-            data['id'] = doc.id
+            # Si el documento no tiene datos o está vacío, lo saltamos de forma segura
+            if not data:
+                continue
+            # Guardamos el ID del documento de Firestore de forma segura sin pisar tu id manual 'p8'
+            data['firestore_id'] = doc.id
             lista_productos.append(data)
+            
         return jsonify(lista_productos), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        # Esto nos va a decir en la consola del navegador EXACTAMENTE qué le duele a Firebase
+        return jsonify({"error": f"Falla en Firestore: {str(e)}"}), 500
 
 @app.route('/api/productos', methods=['POST'])
 def agregar_producto():
