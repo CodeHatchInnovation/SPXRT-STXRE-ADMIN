@@ -1,9 +1,8 @@
 import os
 import json
-import base64
+import firebase_admin
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import firebase_admin
 from firebase_admin import credentials, firestore
 
 app = Flask(__name__)
@@ -50,11 +49,14 @@ except Exception as e:
 # ENDPOINTS DE LA API (CRUD)
 # ==========================================
 
+@app.route('/', methods=['GET'])
+def index():
+    return jsonify({"status": "Backend corriendo perfectamente en Vercel", "firebase": db is not None}), 200
+
 @app.route('/api/productos', methods=['GET'])
 def obtener_productos():
     global db
     try:
-        # Intento de reinicialización de emergencia si db quedó en None
         if not db:
             try:
                 db = firestore.client()
@@ -67,16 +69,14 @@ def obtener_productos():
         lista_productos = []
         for doc in docs:
             data = doc.to_dict()
-            # Si el documento no tiene datos o está vacío, lo saltamos de forma segura
             if not data:
                 continue
-            # Guardamos el ID del documento de Firestore de forma segura sin pisar tu id manual 'p8'
+            # Guardamos el ID del documento de Firestore de forma segura sin pisar tu id manual
             data['firestore_id'] = doc.id
             lista_productos.append(data)
             
         return jsonify(lista_productos), 200
     except Exception as e:
-        # Esto nos va a decir en la consola del navegador EXACTAMENTE qué le duele a Firebase
         return jsonify({"error": f"Falla en Firestore: {str(e)}"}), 500
 
 @app.route('/api/productos', methods=['POST'])
@@ -123,8 +123,7 @@ def editar_producto(id):
         prod_original = prod_doc.to_dict()
         tallas_actualizadas = data.get('tallas', [])
         
-        # REGLA ESTRICTA DE EDICIÓN:
-        # Se ignora cualquier intento de alterar nombre o costo. Mantenemos la compra original.
+        # REGLA ESTRICTA DE EDICIÓN: Mantenemos la compra original.
         precio_compra_original = float(prod_original.get('precioCompra', 0))
         precio_venta_estricto = round(precio_compra_original * 1.20, 2)
         
@@ -149,10 +148,3 @@ def eliminar_producto(id):
         return jsonify({"message": "Producto eliminado definitivamente"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-# ==========================================
-# CONFIGURACIÓN DE PUERTO PARA PRODUCCIÓN
-# ==========================================
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
