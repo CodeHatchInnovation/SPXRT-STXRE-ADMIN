@@ -15,29 +15,23 @@ app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # ==========================================
-# CONFIGURACIÓN DE FIREBASE (ESTRICTA JSON)
+# CONFIGURACIÓN DE FIREBASE (ARCHIVO EN LA RAÍZ)
 # ==========================================
-firebase_config_raw = os.environ.get('FIREBASE_CONFIG_JSON')
+# Cambiado para leer tu archivo directamente al lado de app.py
+# Modifica 'firebase-key.json' si tu archivo se llama de otra forma en GitHub
+nombre_archivo_json = 'firebase-key.json'
+ruta_key = os.path.join(os.path.dirname(__file__), nombre_archivo_json)
 
-if firebase_config_raw:
+if os.path.exists(ruta_key):
     try:
-        # Cargar directamente como JSON plano sin intentar Base64
-        firebase_config = json.loads(firebase_config_raw)
-        
-        # Corregir de forma estricta los saltos de línea de la llave privada de Google
-        if 'private_key' in firebase_config:
-            # Reemplazar variantes de escapes de texto por saltos reales
-            firebase_config['private_key'] = firebase_config['private_key'].replace('\\\\n', '\n').replace('\\n', '\n')
-        
-        # Inicializar el SDK de Firebase
-        cred = credentials.Certificate(firebase_config)
+        # Inicializar el SDK usando el archivo directo de la raíz
+        cred = credentials.Certificate(ruta_key)
         firebase_admin.initialize_app(cred)
-        print("🔥 FIREBASE INICIALIZADO CON ÉXITO: ¡Conexión establecida y lista!")
-        
+        print(f"🔥 FIREBASE CONECTADO: Archivo '{nombre_archivo_json}' cargado con éxito desde la raíz.")
     except Exception as e:
-        print(f"❌ CRÍTICO: Error al procesar el JSON de Firebase: {e}")
+        print(f"❌ CRÍTICO: El archivo '{nombre_archivo_json}' existe, pero Firebase lo rechazó: {e}")
 else:
-    print("❌ CRÍTICO: No se encontró la variable de entorno FIREBASE_CONFIG_JSON")
+    print(f"❌ CRÍTICO: No se encontró el archivo '{nombre_archivo_json}' en la raíz del proyecto.")
 
 # Inicializar cliente Firestore envolviéndolo de forma segura
 try:
