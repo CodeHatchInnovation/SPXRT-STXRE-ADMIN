@@ -15,31 +15,27 @@ app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # ==========================================
-# CONFIGURACIÓN DE FIREBASE BLINDADA
+# CONFIGURACIÓN DE FIREBASE (ESTRICTA JSON)
 # ==========================================
 firebase_config_raw = os.environ.get('FIREBASE_CONFIG_JSON')
 
 if firebase_config_raw:
     try:
-        # 1. Intentar decodificar asumiendo que es la cadena Base64 limpia larga
-        try:
-            decoded_bytes = base64.b64decode(firebase_config_raw.strip())
-            firebase_config = json.loads(decoded_bytes.decode('utf-8'))
-            print("🚀 Firebase: Cargado exitosamente usando decodificación Base64.")
-        except Exception:
-            # 2. Si falla Base64, procesarlo como JSON plano (por si quitas el base64 después)
-            firebase_config = json.loads(firebase_config_raw)
-            if 'private_key' in firebase_config:
-                firebase_config['private_key'] = firebase_config['private_key'].replace('\\n', '\n')
-            print("🚀 Firebase: Cargado exitosamente usando JSON plano.")
-
+        # Cargar directamente como JSON plano sin intentar Base64
+        firebase_config = json.loads(firebase_config_raw)
+        
+        # Corregir de forma estricta los saltos de línea de la llave privada de Google
+        if 'private_key' in firebase_config:
+            # Reemplazar variantes de escapes de texto por saltos reales
+            firebase_config['private_key'] = firebase_config['private_key'].replace('\\\\n', '\n').replace('\\n', '\n')
+        
         # Inicializar el SDK de Firebase
         cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
-        print("🔥 Firebase inicializado con éxito y listo para operar.")
+        print("🔥 FIREBASE INICIALIZADO CON ÉXITO: ¡Conexión establecida y lista!")
         
     except Exception as e:
-        print(f"❌ CRÍTICO: Error al procesar la configuración de Firebase: {e}")
+        print(f"❌ CRÍTICO: Error al procesar el JSON de Firebase: {e}")
 else:
     print("❌ CRÍTICO: No se encontró la variable de entorno FIREBASE_CONFIG_JSON")
 
