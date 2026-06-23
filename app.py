@@ -13,24 +13,26 @@ CORS(app)  # Permite que JavaScript se comunique con Flask sin bloqueos
 # ==========================================
 # Intenta leer primero la llave desde las variables de entorno de Render (Producción)
 # Si no existe, lee tu archivo local (Desarrollo)
-firebase_key_env = os.environ.get('FIREBASE_CONFIG_JSON')
+# Cargar la variable de entorno
+firebase_config_raw = os.environ.get('FIREBASE_CONFIG_JSON')
 
-if firebase_key_env:
+if firebase_config_raw:
     try:
-        cred_dict = json.loads(firebase_key_env)
-        cred = credentials.Certificate(cred_dict)
+        # Convertir el texto a un diccionario de Python
+        firebase_config = json.loads(firebase_config_raw)
+        
+        # El truco mágico: Reemplazar los '\n' de texto por saltos de línea reales en la llave privada
+        if 'private_key' in firebase_config:
+            firebase_config['private_key'] = firebase_config['private_key'].replace('\\n', '\n')
+        
+        # Inicializar Firebase con el JSON corregido
+        cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
-        print("🔥 Firebase inicializado con éxito usando Variables de Entorno en Render.")
+        print("🔥 Firebase inicializado con éxito y llave formateada correctamente.")
     except Exception as e:
-        print(f"❌ Error al cargar la variable de entorno de Firebase: {e}")
+        print(f"❌ Error al procesar el JSON de Firebase: {e}")
 else:
-    # Tu configuración original local
-    try:
-        cred = credentials.Certificate("firebase-adminsdk.json")
-        firebase_admin.initialize_app(cred)
-        print("💻 Firebase inicializado localmente usando archivo .json.")
-    except Exception as e:
-        print(f"❌ Error al cargar el archivo JSON local: {e}")
+    print("❌ No se encontró la variable de entorno FIREBASE_CONFIG_JSON")
 
 db = firestore.client()
 
