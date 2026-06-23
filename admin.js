@@ -1,18 +1,41 @@
-import { 
-    firestoreDB, 
-    collection, 
-    getDocs, 
-    addDoc, 
-    updateDoc, 
-    deleteDoc, 
-    doc 
-} from "./firebase.js";
-
 let productosAdmin = [];
 let productoSeleccionadoId = null;
 
+const URL_API = "http://localhost:5000/api/productos";
+const TODAS_LAS_TALLAS = ['25', '26', '27', '28', 'CH', 'M', 'G', 'XG', 'Unitalla'];
+
 // ==========================================
-// CONTROL DE AUTENTICACIÓN (LOGIN)
+// CONFIGURACIÓN DE EMAILJS (REAL)
+// ==========================================
+const EMAILJS_PUBLIC_KEY = "TU_PUBLIC_KEY";   
+const EMAILJS_SERVICE_ID = "TU_SERVICE_ID";   
+const EMAILJS_TEMPLATE_ID = "TU_TEMPLATE_ID"; 
+
+if (typeof emailjs !== 'undefined') {
+    emailjs.init(EMAILJS_PUBLIC_KEY);
+}
+
+// Función encargada de disparar los correos reales desde el Front
+function verificarYEnviarEmailJS(nombreProducto, listaTallas) {
+    listaTallas.forEach(t => {
+        // Regla: stock mayor a 0 pero menor a 10 piezas
+        if (t.stock > 0 && t.stock < 10) {
+            const templateParams = {
+                product_name: nombreProducto,
+                size_name: t.talla,
+                stock_current: t.stock,
+                to_email: "tu_correo_destino@gmail.com" 
+            };
+
+            emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams)
+                .then(() => console.log(`✅ EmailJS envió alerta para ${nombreProducto} [Talla: ${t.talla}]`))
+                .catch(err => console.error("❌ Error en EmailJS:", err));
+        }
+    });
+}
+
+// ==========================================
+// CONTROL DE LOGIN Y LOGOUT
 // ==========================================
 document.getElementById('form-login').onsubmit = (e) => {
     e.preventDefault();
@@ -47,49 +70,44 @@ document.getElementById('btn-logout').onclick = () => {
 };
 
 // ==========================================
-// CONSULTAR COLECCIÓN EN FIRESTORE
+// OPERACIONES DE RENDERIZADO Y BUSCADOR
 // ==========================================
 async function obtenerProductosAdmin() {
     try {
-        const querySnapshot = await getDocs(collection(firestoreDB, "productos"));
-        productosAdmin = [];
-        querySnapshot.forEach((docSnap) => {
-            productosAdmin.push({
-                ...docSnap.data(),
-                id: docSnap.id
-            });
-        });
+        const res = await fetch(URL_API);
+        productosAdmin = await res.json();
         renderizarGridAdmin(productosAdmin);
     } catch (error) {
-        console.error("Error al obtener inventario:", error);
+        console.error("Error conectando con Python:", error);
     }
 }
 
-// ==========================================
-// INYECCIÓN VISUAL DE LAS TARJETAS (GRID)
-// ==========================================
 function renderizarGridAdmin(lista) {
     const grid = document.getElementById('grid-inventario');
     grid.innerHTML = "";
 
     lista.forEach(p => {
-        const stockTotal = p.tallas ? p.tallas.reduce((acc, t) => acc + Number(t.stock), 0) : 0;
+        const tallasActivas = p.tallas ? p.tallas.filter(t => Number(t.stock) > 0) : [];
+        const stockTotal = tallasActivas.reduce((acc, t) => acc + Number(t.stock), 0);
         
+        const badgeTallas = tallasActivas.length > 0 
+            ? tallasActivas.map(t => `<span class="bg-purple-50 text-[#7c3aed] px-1.5 py-0.5 rounded text-[10px] font-bold">${t.talla}: ${t.stock}</span>`).join(' ')
+            : `<span class="text-red-400 italic text-[10px] font-bold">Agotado</span>`;
+
         const card = document.createElement('div');
         card.className = "product-card bg-white border border-gray-100 rounded-2xl p-5 flex flex-col relative group shadow-sm";
         card.innerHTML = `
-            <div class="w-full h-40 flex items-center justify-center bg-gray-50/60 rounded-xl mb-4 overflow-hidden">
+            <div class="w-full h-40 flex items-center justify-center bg-gray-50/60 rounded-xl mb-3 overflow-hidden">
                 <img src="${p.img}" class="h-32 object-contain mix-blend-multiply transition-transform duration-500 group-hover:scale-105">
             </div>
-            <h5 class="font-bold text-sm text-gray-900 truncate mb-3">${p.nombre}</h5>
-            
-            <div class="space-y-1.5 text-xs text-gray-500 mb-5">
-                <div class="flex justify-between"><span>Compra:</span><span class="font-semibold text-gray-700">$${Number(p.precioCompra || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
-                <div class="flex justify-between"><span>Venta:</span><span class="font-bold text-[#7c3aed]">$${Number(p.precioVenta || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
-                <div class="flex justify-between border-t border-gray-50 pt-1 mt-1"><span>Stock:</span><span class="font-medium text-gray-800">${stockTotal} pzas</span></div>
+            <h5 class="font-bold text-sm text-gray-900 truncate mb-1">${p.nombre}</h5>
+            <div class="flex flex-wrap gap-1 mb-3 max-h-12 overflow-y-auto py-1">${badgeTallas}</div>
+            <div class="space-y-1.5 text-xs text-gray-500 mb-5 mt-auto">
+                <div class="flex justify-between"><span>Compra:</span><span class="font-semibold text-gray-700">$${Number(p.precioCompra || 0).toFixed(2)}</span></div>
+                <div class="flex justify-between"><span>Venta:</span><span class="font-bold text-[#7c3aed]">$${Number(p.precioVenta || 0).toFixed(2)}</span></div>
+                <div class="flex justify-between border-t border-gray-50 pt-1 mt-1"><span>Total Stock:</span><span class="font-medium text-gray-800">${stockTotal} pzas</span></div>
             </div>
-
-            <div class="mt-auto pt-2 grid grid-cols-4 gap-2">
+            <div class="pt-2 grid grid-cols-4 gap-2">
                 <button onclick="abrirModalEditar('${p.id}')" class="col-span-3 py-2 border border-purple-200 text-[#7c3aed] text-xs font-bold rounded-xl bg-purple-50/30 hover:bg-purple-50 transition-all">Editar</button>
                 <button onclick="abrirModalEliminar('${p.id}')" class="py-2 border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-100 rounded-xl transition-all flex items-center justify-center"><i class="ph ph-trash text-base"></i></button>
             </div>
@@ -98,17 +116,19 @@ function renderizarGridAdmin(lista) {
     });
 }
 
-// ==========================================
-// FILTRADO / BUSCADOR EN VIVO
-// ==========================================
 document.getElementById('admin-search').addEventListener('input', function() {
     const query = this.value.toLowerCase();
     const filtrados = productosAdmin.filter(p => p.nombre.toLowerCase().includes(query));
     renderizarGridAdmin(filtrados);
 });
 
+document.getElementById('add-compra').addEventListener('input', function() {
+    const costo = Number(this.value || 0);
+    document.getElementById('add-venta').value = (costo * 1.20).toFixed(2);
+});
+
 // ==========================================
-// ACCIONES MODAL: AGREGAR PRODUCTO
+// ACCIONES: MODAL AGREGAR
 // ==========================================
 window.abrirModalAgregar = () => document.getElementById('modal-agregar').classList.remove('hidden');
 window.cerrarModalAgregar = () => {
@@ -118,44 +138,63 @@ window.cerrarModalAgregar = () => {
 
 document.getElementById('form-agregar').onsubmit = async (e) => {
     e.preventDefault();
+    const listaTallas = [];
+    TODAS_LAS_TALLAS.forEach(t => {
+        const stockInput = Number(document.getElementById(`add-talla-${t}`).value || 0);
+        listaTallas.push({ talla: t, stock: stockInput });
+    });
+
     const nuevo = {
         nombre: document.getElementById('add-nombre').value,
         desc: document.getElementById('add-desc').value,
         img: document.getElementById('add-img').value,
         precioCompra: Number(document.getElementById('add-compra').value),
-        precioVenta: Number(document.getElementById('add-venta').value),
-        sku: "SPX-" + Math.floor(1000 + Math.random() * 9000),
-        tallas: [
-            { talla: "25", stock: Number(document.getElementById('add-talla-25').value) },
-            { talla: "26", stock: Number(document.getElementById('add-talla-26').value) },
-            { talla: "27", stock: Number(document.getElementById('add-talla-27').value) },
-            { talla: "28", stock: Number(document.getElementById('add-talla-28').value) }
-        ]
+        tallas: listaTallas
     };
 
-    try {
-        await addDoc(collection(firestoreDB, "productos"), nuevo);
+    const res = await fetch(URL_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nuevo)
+    });
+
+    if (res.ok) {
+        const dataJson = await res.json();
+        // Mandamos a EmailJS a validar si el nuevo producto entra con stock bajo
+        verificarYEnviarEmailJS(nuevo.nombre, listaTallas);
         cerrarModalAgregar();
         obtenerProductosAdmin();
-    } catch (err) {
-        console.error("Error al añadir producto:", err);
     }
 };
 
 // ==========================================
-// ACCIONES MODAL: EDITAR PRODUCTO
+// ACCIONES: MODAL EDITAR (CON DISEÑO BLOQUEADO)
 // ==========================================
 window.abrirModalEditar = (id) => {
     const prod = productosAdmin.find(p => p.id === id);
     if (!prod) return;
 
     document.getElementById('edit-id').value = prod.id;
-    document.getElementById('edit-nombre').value = prod.nombre;
-    document.getElementById('edit-compra').value = prod.precioCompra || 0;
-    document.getElementById('edit-venta').value = prod.precioVenta || 0;
+    
+    // ASIGNAR INFORMACIÓN ACTUAL Y APLICAR ESTILO VISUAL DE BLOQUEO (UX)
+    const inputNombre = document.getElementById('edit-nombre');
+    inputNombre.value = prod.nombre;
+    inputNombre.disabled = true; 
+    inputNombre.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 cursor-not-allowed text-gray-400 font-medium select-none focus:ring-0 focus:border-gray-200";
 
-    ['25', '26', '27', '28'].forEach(t => {
-        const objTalla = prod.tallas ? prod.tallas.find(x => x.talla == t) : null;
+    const inputCompra = document.getElementById('edit-compra');
+    inputCompra.value = prod.precioCompra || 0;
+    inputCompra.disabled = true;
+    inputCompra.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 cursor-not-allowed text-gray-400 font-medium select-none focus:ring-0 focus:border-gray-200";
+
+    const inputVenta = document.getElementById('edit-venta');
+    inputVenta.value = (Number(prod.precioCompra || 0) * 1.20).toFixed(2);
+    inputVenta.disabled = true;
+    inputVenta.className = "w-full px-4 py-2.5 border border-purple-200 rounded-xl text-sm bg-purple-50/60 cursor-not-allowed font-bold text-[#7c3aed] select-none focus:ring-0 focus:border-purple-200";
+
+    // Cargar existencias actuales en los inputs editables de las tallas
+    TODAS_LAS_TALLAS.forEach(t => {
+        const objTalla = prod.tallas ? prod.tallas.find(x => x.talla === t) : null;
         document.getElementById(`edit-talla-${t}`).value = objTalla ? objTalla.stock : 0;
     });
 
@@ -167,31 +206,30 @@ window.cerrarModalEditar = () => document.getElementById('modal-editar').classLi
 document.getElementById('form-editar').onsubmit = async (e) => {
     e.preventDefault();
     const id = document.getElementById('edit-id').value;
-    const docRef = doc(firestoreDB, "productos", id);
+    const prodOriginal = productosAdmin.find(p => p.id === id);
 
-    const actualizacion = {
-        nombre: document.getElementById('edit-nombre').value,
-        precioCompra: Number(document.getElementById('edit-compra').value),
-        precioVenta: Number(document.getElementById('edit-venta').value),
-        tallas: [
-            { talla: "25", stock: Number(document.getElementById('edit-talla-25').value) },
-            { talla: "26", stock: Number(document.getElementById('edit-talla-26').value) },
-            { talla: "27", stock: Number(document.getElementById('edit-talla-27').value) },
-            { talla: "28", stock: Number(document.getElementById('edit-talla-28').value) }
-        ]
-    };
+    const listaTallasActualizadas = [];
+    TODAS_LAS_TALLAS.forEach(t => {
+        const stockInput = Number(document.getElementById(`edit-talla-${t}`).value || 0);
+        listaTallasActualizadas.push({ talla: t, stock: stockInput });
+    });
 
-    try {
-        await updateDoc(docRef, actualizacion);
+    const res = await fetch(`${URL_API}/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tallas: listaTallasActualizadas })
+    });
+
+    if (res.ok) {
+        // Al quedar guardado en Python con éxito, JS detona EmailJS para evaluar si manda correo
+        verificarYEnviarEmailJS(prodOriginal.nombre, listaTallasActualizadas);
         cerrarModalEditar();
         obtenerProductosAdmin();
-    } catch (err) {
-        console.error("Error al actualizar producto:", err);
     }
 };
 
 // ==========================================
-// ACCIONES MODAL: ELIMINAR PRODUCTO
+// ACCIONES: MODAL ELIMINAR
 // ==========================================
 window.abrirModalEliminar = (id) => {
     const prod = productosAdmin.find(p => p.id === id);
@@ -200,7 +238,7 @@ window.abrirModalEliminar = (id) => {
     productoSeleccionadoId = id;
     document.getElementById('del-img').src = prod.img;
     document.getElementById('del-nombre').innerText = prod.nombre;
-    document.getElementById('del-sku').innerText = prod.sku || 'SKU-GENÉRICO';
+    document.getElementById('del-sku').innerText = prod.sku || 'SPX-GEN';
     document.getElementById('modal-eliminar').classList.remove('hidden');
 };
 
@@ -208,11 +246,9 @@ window.cerrarModalEliminar = () => document.getElementById('modal-eliminar').cla
 
 document.getElementById('btn-confirmar-eliminar').onclick = async () => {
     if (!productoSeleccionadoId) return;
-    try {
-        await deleteDoc(doc(firestoreDB, "productos", productoSeleccionadoId));
+    const res = await fetch(`${URL_API}/${productoSeleccionadoId}`, { method: 'DELETE' });
+    if (res.ok) {
         cerrarModalEliminar();
         obtenerProductosAdmin();
-    } catch (err) {
-        console.error("Error al eliminar producto:", err);
     }
 };
