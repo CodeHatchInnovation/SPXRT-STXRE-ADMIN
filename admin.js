@@ -7,9 +7,9 @@ const TODAS_LAS_TALLAS = ['25', '26', '27', '28', 'CH', 'M', 'G', 'XG', 'Unitall
 // ==========================================
 // CONFIGURACIÓN DE EMAILJS (REAL)
 // ==========================================
-const EMAILJS_PUBLIC_KEY = "TU_PUBLIC_KEY";   
-const EMAILJS_SERVICE_ID = "TU_SERVICE_ID";   
-const EMAILJS_TEMPLATE_ID = "TU_TEMPLATE_ID"; 
+const EMAILJS_PUBLIC_KEY = "DDMzin7mNH5wWjXBE";   
+const EMAILJS_SERVICE_ID = "service_jcmou3p";   
+const EMAILJS_TEMPLATE_ID = "template_bod2xn7"; 
 
 if (typeof emailjs !== 'undefined') {
     emailjs.init(EMAILJS_PUBLIC_KEY);
@@ -24,7 +24,7 @@ function verificarYEnviarEmailJS(nombreProducto, listaTallas) {
                 product_name: nombreProducto,
                 size_name: t.talla,
                 stock_current: t.stock,
-                to_email: "tu_correo_destino@gmail.com" 
+                to_email: "brandonurielescalonagarcia@gmail.com" 
             };
 
             emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams)
