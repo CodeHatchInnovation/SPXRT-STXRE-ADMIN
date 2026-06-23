@@ -1,7 +1,7 @@
 let productosAdmin = [];
 let productoSeleccionadoId = null;
 
-const URL_API = "https://spxrt-stxre-admin.onrender.com";
+const URL_API = "https://spxrt-stxre-admin.onrender.com/api/productos";
 const TODAS_LAS_TALLAS = ['25', '26', '27', '28', 'CH', 'M', 'G', 'XG', 'Unitalla'];
 
 // ==========================================
