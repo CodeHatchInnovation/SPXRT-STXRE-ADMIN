@@ -19,7 +19,7 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 # ==========================================
 # Cambiado para leer tu archivo directamente al lado de app.py
 # Modifica 'firebase-key.json' si tu archivo se llama de otra forma en GitHub
-nombre_archivo_json = 'firebase-key.json'
+nombre_archivo_json = 'firebase-adminsdk.json'
 ruta_key = os.path.join(os.path.dirname(__file__), nombre_archivo_json)
 
 if os.path.exists(ruta_key):
