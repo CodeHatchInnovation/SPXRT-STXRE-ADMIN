@@ -11,7 +11,7 @@ CORS(app)  # Permite que JavaScript se comunique con Flask sin bloqueos
 # CONFIGURACIÓN DE FIREBASE (SDK ADMIN)
 # ==========================================
 # Recuerda descargar tu archivo .json de credenciales desde la consola de Firebase
-cred = credentials.Certificate("tu-firebase-adminsdk.json")
+cred = credentials.Certificate("firebase-adminsdk.json")
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
