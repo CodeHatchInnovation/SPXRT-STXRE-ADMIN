@@ -15,23 +15,36 @@ app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # ==========================================
-# CONFIGURACIÓN DE FIREBASE (ARCHIVO EN LA RAÍZ)
+# CONFIGURACIÓN DE FIREBASE (HÍBRIDA SEGURA)
 # ==========================================
-# Cambiado para leer tu archivo directamente al lado de app.py
-# Modifica 'firebase-key.json' si tu archivo se llama de otra forma en GitHub
 nombre_archivo_json = 'firebase-adminsdk.json'
 ruta_key = os.path.join(os.path.dirname(__file__), nombre_archivo_json)
 
 if os.path.exists(ruta_key):
     try:
-        # Inicializar el SDK usando el archivo directo de la raíz
-        cred = credentials.Certificate(ruta_key)
-        firebase_admin.initialize_app(cred)
-        print(f"🔥 FIREBASE CONECTADO: Archivo '{nombre_archivo_json}' cargado con éxito desde la raíz.")
+        # 1. Leer el JSON base desde el archivo de la raíz
+        with open(ruta_key, 'r') as f:
+            firebase_config = json.load(f)
+        
+        # 2. Inyectar la llave privada real desde las variables de Render
+        # Buscaremos la llave en la variable llamada 'FIREBASE_PRIVATE_KEY'
+        llave_real = os.environ.get('FIREBASE_PRIVATE_KEY')
+        
+        if llave_real:
+            # Reparar saltos de línea por si acaso
+            firebase_config['private_key'] = llave_real.replace('\\\\n', '\n').replace('\\n', '\n')
+            
+            # Inicializar el SDK
+            cred = credentials.Certificate(firebase_config)
+            firebase_admin.initialize_app(cred)
+            print("🔥 FIREBASE CONECTADO: Llave inyectada dinámicamente con éxito.")
+        else:
+            print("❌ CRÍTICO: No se encontró la variable 'FIREBASE_PRIVATE_KEY' en Render.")
+            
     except Exception as e:
-        print(f"❌ CRÍTICO: El archivo '{nombre_archivo_json}' existe, pero Firebase lo rechazó: {e}")
+        print(f"❌ CRÍTICO: Error procesando la llave dinámica: {e}")
 else:
-    print(f"❌ CRÍTICO: No se encontró el archivo '{nombre_archivo_json}' en la raíz del proyecto.")
+    print(f"❌ CRÍTICO: No se encontró el archivo '{nombre_archivo_json}' en la raíz.")
 
 # Inicializar cliente Firestore envolviéndolo de forma segura
 try:
