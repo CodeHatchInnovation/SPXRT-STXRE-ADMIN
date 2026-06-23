@@ -1,4 +1,5 @@
 import os
+import json
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import firebase_admin
@@ -8,11 +9,29 @@ app = Flask(__name__)
 CORS(app)  # Permite que JavaScript se comunique con Flask sin bloqueos
 
 # ==========================================
-# CONFIGURACIÓN DE FIREBASE (SDK ADMIN)
+# CONFIGURACIÓN DE FIREBASE (HÍBRIDA)
 # ==========================================
-# Recuerda descargar tu archivo .json de credenciales desde la consola de Firebase
-cred = credentials.Certificate("firebase-adminsdk.json")
-firebase_admin.initialize_app(cred)
+# Intenta leer primero la llave desde las variables de entorno de Render (Producción)
+# Si no existe, lee tu archivo local (Desarrollo)
+firebase_key_env = os.environ.get('FIREBASE_CONFIG_JSON')
+
+if firebase_key_env:
+    try:
+        cred_dict = json.loads(firebase_key_env)
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred)
+        print("🔥 Firebase inicializado con éxito usando Variables de Entorno en Render.")
+    except Exception as e:
+        print(f"❌ Error al cargar la variable de entorno de Firebase: {e}")
+else:
+    # Tu configuración original local
+    try:
+        cred = credentials.Certificate("firebase-adminsdk.json")
+        firebase_admin.initialize_app(cred)
+        print("💻 Firebase inicializado localmente usando archivo .json.")
+    except Exception as e:
+        print(f"❌ Error al cargar el archivo JSON local: {e}")
+
 db = firestore.client()
 
 # ==========================================
@@ -95,5 +114,11 @@ def eliminar_producto(id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ==========================================
+# CONFIGURACIÓN DE PUERTO PARA PRODUCCIÓN
+# ==========================================
 if __name__ == '__main__':
-    app.run(port=5000, debug=True)
+    # Render asigna dinámicamente un puerto en la variable de entorno 'PORT'
+    port = int(os.environ.get('PORT', 5000))
+    # Escucha en '0.0.0.0' para permitir conexiones externas en internet
+    app.run(host='0.0.0.0', port=port)
