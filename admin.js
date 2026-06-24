@@ -3,7 +3,7 @@ let productoSeleccionadoId = null;
 
 // 🔥 DIRECCIONES CLAVE
 const URL_PYTHON = "http://localhost:5000/api"; 
-const TODAS_LAS_TALLAS = ['25', '26', '27', '28', 'CH', 'M', 'G', 'XG', 'Unitalla'];
+const TODAS_LAS_TALLAS = ['25', '26', '27', '28', 'CH', 'M', 'G', 'XG', 'Unitalla', '3', '4', '5', '6', '7', '8'];
 
 // ==========================================
 // CONFIGURACIÓN DE EMAILJS (REAL) Y API KEY
