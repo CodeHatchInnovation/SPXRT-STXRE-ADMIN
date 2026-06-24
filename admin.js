@@ -2,7 +2,7 @@ let productosAdmin = [];
 let productoSeleccionadoId = null;
 
 // 🔥 DIRECCIONES CLAVE
-const URL_PYTHON = "http://localhost:5000/api"; // Servidor local para lógica
+const URL_PYTHON = "http://localhost:5000/api"; 
 const TODAS_LAS_TALLAS = ['25', '26', '27', '28', 'CH', 'M', 'G', 'XG', 'Unitalla'];
 
 // ==========================================
@@ -34,7 +34,7 @@ function verificarYEnviarEmailJS(nombreProducto, listaTallas) {
 }
 
 // ==========================================
-// CONTROL DE LOGIN Y LOGOUT (CONECTADO A PYTHON)
+// CONTROL DE LOGIN Y LOGOUT
 // ==========================================
 document.getElementById('form-login').onsubmit = async (e) => {
     e.preventDefault();
@@ -90,7 +90,6 @@ async function obtenerProductosAdmin() {
         const data = await res.json();
         
         productosAdmin = data.success && data.productos ? data.productos : [];
-
         renderizarGridAdmin(productosAdmin);
     } catch (error) {
         console.error("❌ Error trayendo productos a través de Python:", error);
@@ -139,20 +138,20 @@ document.getElementById('admin-search').addEventListener('input', function() {
     renderizarGridAdmin(filtrados);
 });
 
-// Cálculo automático +20% al agregar nuevo producto
+// Cálculo dinámico +20% al agregar
 document.getElementById('add-compra').addEventListener('input', function() {
     const costo = Number(this.value || 0);
     document.getElementById('add-venta').value = (costo * 1.20).toFixed(2);
 });
 
-// Cálculo automático +20% en tiempo real al EDITAR producto existente
+// Cálculo dinámico +20% al editar
 document.getElementById('edit-compra').addEventListener('input', function() {
     const costo = Number(this.value || 0);
     document.getElementById('edit-venta').value = (costo * 1.20).toFixed(2);
 });
 
 // ==========================================
-// ACCIONES: MODAL AGREGAR (FILTRO EN PYTHON)
+// ACCIONES: MODAL AGREGAR
 // ==========================================
 window.abrirModalAgregar = () => document.getElementById('modal-agregar').classList.remove('hidden');
 window.cerrarModalAgregar = () => {
@@ -191,7 +190,6 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
         }
 
         const productoProcesado = respuestaPython.producto;
-        // 🔥 Corregido aquí para que apunte a tu ID real en caso de que agregues desde aquí
         const urlFirestore = `https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos?key=${EMAILJS_PUBLIC_KEY}`;
         
         const bodyFirestore = {
@@ -232,12 +230,11 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
         }
     } catch (error) {
         console.error("❌ Error en el proceso de agregado/validación:", error);
-        alert("Error de comunicación. Asegúrate de tener Python encendido.");
     }
 };
 
 // ==========================================
-// ACCIONES: MODAL EDITAR (CON PRECIO DINÁMICO)
+// ACCIONES: MODAL EDITAR
 // ==========================================
 window.abrirModalEditar = (id) => {
     const prod = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
@@ -251,13 +248,11 @@ window.abrirModalEditar = (id) => {
     inputNombre.disabled = true; 
     inputNombre.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 cursor-not-allowed text-gray-400 font-medium select-none";
 
-    // El precio de compra se mantiene editable libremente
     const inputCompra = document.getElementById('edit-compra');
     inputCompra.value = prod.precioCompra || 0;
     inputCompra.disabled = false;
     inputCompra.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-purple-500 font-medium text-gray-800";
 
-    // El precio de venta permanece bloqueado, calculándose dinámicamente
     const inputVenta = document.getElementById('edit-venta');
     inputVenta.value = (Number(prod.precioCompra || 0) * 1.20).toFixed(2);
     inputVenta.disabled = true;
@@ -278,7 +273,6 @@ document.getElementById('form-editar').onsubmit = async (e) => {
     const id = document.getElementById('edit-id').value;
     const prodOriginal = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
 
-    // Corrección definitiva con parseFloat
     const nuevaCompra = parseFloat(document.getElementById('edit-compra').value || 0);
     const nuevaVenta = parseFloat(document.getElementById('edit-venta').value || 0);
 
@@ -289,45 +283,29 @@ document.getElementById('form-editar').onsubmit = async (e) => {
     });
 
     try {
-        // Corrección de URL agregando campos económicos a la máscara de actualización para que admita guardar todo junto
-        const urlDoc = `https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos/${id}?updateMask.fieldPaths=tallas&updateMask.fieldPaths=precioCompra&updateMask.fieldPaths=precioVenta&key=${EMAILJS_PUBLIC_KEY}`;
-        
-        const bodyFirestore = {
-            fields: {
-                precioCompra: { doubleValue: nuevaCompra },
-                precioVenta: { doubleValue: nuevaVenta },
-                tallas: {
-                    arrayValue: {
-                        values: listaTallasActualizadas.map(t => ({
-                            mapValue: {
-                                fields: {
-                                    talla: { stringValue: t.talla },
-                                    stock: { integerValue: String(t.stock) }
-                                }
-                            }
-                        }))
-                    }
-                }
-            }
-        };
-
-        const res = await fetch(urlDoc, {
+        // 🔥 Envío seguro delegando el proceso de actualización PATCH a Python para evadir el bloqueo CORS
+        const res = await fetch(`${URL_PYTHON}/productos/${id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(bodyFirestore)
+            body: JSON.stringify({
+                precioCompra: nuevaCompra,
+                precioVenta: nuevaVenta,
+                tallas: listaTallasActualizadas,
+                key: EMAILJS_PUBLIC_KEY
+            })
         });
 
-        if (res.ok) {
+        const dataResponse = await res.json();
+
+        if (res.ok && dataResponse.success) {
             verificarYEnviarEmailJS(prodOriginal.nombre, listaTallasActualizadas);
             cerrarModalEditar();
             obtenerProductosAdmin();
         } else {
-            const errorData = await res.json();
-            console.error("❌ Error devuelto por Firebase:", errorData);
-            alert("Firebase rechazó la actualización. Abre la consola de desarrollo para inspeccionar el problema.");
+            alert(`⚠️ Error al guardar cambios: ${dataResponse.error || "Fallo en el backend"}`);
         }
     } catch (error) {
-        console.error("Error al actualizar producto:", error);
+        console.error("Error al actualizar producto a través de Python:", error);
     }
 };
 
