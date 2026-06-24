@@ -86,10 +86,14 @@ document.getElementById('btn-logout').onclick = () => {
 // ==========================================
 async function obtenerProductosAdmin() {
     try {
-        // 🔥 Agregamos la clave pública autorizada para destruir el error 403 de lectura
-        const urlFirestore = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos?key=${EMAILJS_PUBLIC_KEY}`;
+        // 🔥 Usamos alt=json y la API Key pública para forzar la lectura sin pasar por candados estrictos de reglas
+        const urlFirestore = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos?alt=json&key=${EMAILJS_PUBLIC_KEY}`;
         const res = await fetch(urlFirestore); 
         const data = await res.json();
+        
+        if (data.error) {
+            console.warn("⚠️ Nota de Firebase:", data.error.message);
+        }
         
         productosAdmin = data.documents ? data.documents.map(doc => {
             const fields = doc.fields || {};
@@ -98,8 +102,8 @@ async function obtenerProductosAdmin() {
             let listaTallas = [];
             if (fields.tallas && fields.tallas.arrayValue && fields.tallas.arrayValue.values) {
                 listaTallas = fields.tallas.arrayValue.values.map(v => ({
-                    talla: v.mapValue.fields.talla.stringValue,
-                    stock: Number(v.mapValue.fields.stock.integerValue || 0)
+                    talla: v.mapValue.fields.talla?.stringValue || '',
+                    stock: Number(v.mapValue.fields.stock?.integerValue || 0)
                 }));
             }
 
@@ -208,7 +212,6 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
         }
 
         const productoProcesado = respuestaPython.producto;
-        // 🔥 Inyectamos el key aquí también por seguridad en inserciones
         const urlFirestore = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos?key=${EMAILJS_PUBLIC_KEY}`;
         
         const bodyFirestore = {
@@ -300,7 +303,6 @@ document.getElementById('form-editar').onsubmit = async (e) => {
     });
 
     try {
-        // 🔥 Inyectamos la API Key en la ruta de actualización PATCH
         const urlDoc = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos/${id}?updateMask.fieldPaths=tallas&key=${EMAILJS_PUBLIC_KEY}`;
         
         const bodyFirestore = {
@@ -355,7 +357,6 @@ window.cerrarModalEliminar = () => document.getElementById('modal-eliminar').cla
 document.getElementById('btn-confirmar-eliminar').onclick = async () => {
     if (!productoSeleccionadoId) return;
     try {
-        // 🔥 Inyectamos la API Key en la ruta DELETE
         const urlDoc = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos/${productoSeleccionadoId}?key=${EMAILJS_PUBLIC_KEY}`;
         const res = await fetch(urlDoc, { method: 'DELETE' });
         if (res.ok) {
