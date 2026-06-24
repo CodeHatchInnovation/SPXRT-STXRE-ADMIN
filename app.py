@@ -3,7 +3,7 @@ from flask_cors import CORS
 import requests
 
 app = Flask(__name__)
-# Permitimos CORS para que tu GitHub Pages pueda consultar este servidor local sin trabas
+# Permitimos CORS para que tu GitHub Pages se comunique localmente sin trabas
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Cuentas de Administrador Autorizadas
@@ -65,11 +65,9 @@ def validar_producto():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# 🔥 RUTA CORREGIDA CON TU ID DE PROYECTO REAL (e-commerce-2ff74)
 @app.route('/api/productos', methods=['GET'])
 def obtener_productos_contingencia():
     try:
-        # Apuntamos directamente a tu ID de proyecto real para traer los Nike Total 90 y los demás documentos
         url = "https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos?alt=json"
         res = requests.get(url)
         data = res.json()
@@ -80,7 +78,6 @@ def obtener_productos_contingencia():
                 fields = doc.get("fields", {})
                 id_doc = doc.get("name", "").split('/')[-1]
                 
-                # Desglose estructurado del array de tallas mapeado desde el JSON crudo de Google
                 lista_tallas = []
                 tallas_raw = fields.get("tallas", {}).get("arrayValue", {}).get("values", [])
                 for t in tallas_raw:
@@ -106,6 +103,49 @@ def obtener_productos_contingencia():
         return jsonify({"success": False, "error": f"Error de comunicación backend: {str(e)}"}), 500
 
 
+# 🔥 NUEVA RUTA PUENTE: Evita el bloqueo de CORS del navegador haciendo el PATCH directo desde Python
+@app.route('/api/productos/<id_doc>', methods=['PATCH'])
+def editar_producto_contingencia(id_doc):
+    try:
+        data = request.json or {}
+        precio_compra = data.get('precioCompra', 0)
+        precio_venta = data.get('precioVenta', 0)
+        tallas = data.get('tallas', [])
+        api_key = data.get('key', 'DDMzin7mNH5wWjXBE')
+
+        body_firestore = {
+            "fields": {
+                "precioCompra": { "doubleValue": float(precio_compra) },
+                "precioVenta": { "doubleValue": float(precio_venta) },
+                "tallas": {
+                    "arrayValue": {
+                        "values": [
+                            {
+                                "mapValue": {
+                                    "fields": {
+                                        "talla": { "stringValue": t["talla"] },
+                                        "stock": { "integerValue": str(t["stock"]) }
+                                    }
+                                }
+                            } for t in tallas
+                        ]
+                    }
+                }
+            }
+        }
+
+        url_doc = f"https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos/{id_doc}?updateMask.fieldPaths=tallas&updateMask.fieldPaths=precioCompra&updateMask.fieldPaths=precioVenta&key={api_key}"
+        
+        res = requests.patch(url_doc, json=body_firestore)
+        
+        if res.status_code == 200:
+            return jsonify({"success": True}), 200
+        else:
+            return jsonify({"success": False, "error": res.json()}), res.status_code
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 if __name__ == '__main__':
-    # Lanzamos el backend local en el puerto 5000
     app.run(host='0.0.0.0', port=5000, debug=True)
