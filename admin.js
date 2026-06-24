@@ -86,8 +86,6 @@ document.getElementById('btn-logout').onclick = () => {
 // ==========================================
 async function obtenerProductosAdmin() {
     try {
-        // Obtenemos los productos de Firebase usando una petición directa/simulada limpia de bloqueos
-        // Nota: Asegúrate de que tu base web esté inicializada o usa el fetch de lectura directa de tu base
         const res = await fetch("https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos"); 
         const data = await res.json();
         
@@ -95,7 +93,6 @@ async function obtenerProductosAdmin() {
             const fields = doc.fields || {};
             const id = doc.name.split('/').pop();
             
-            // Reconstrucción del mapa de tallas desde la API REST de Firebase
             let listaTallas = [];
             if (fields.tallas && fields.tallas.arrayValue && fields.tallas.arrayValue.values) {
                 listaTallas = fields.tallas.arrayValue.values.map(v => ({
@@ -195,7 +192,6 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
     };
 
     try {
-        // 🚀 PASO 1: Le mandamos los datos a Python para que los valide y calcule el +20% y SKU
         const resPython = await fetch(`${URL_PYTHON}/validar-producto`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -205,18 +201,13 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
         const respuestaPython = await resPython.json();
 
         if (!resPython.ok || !respuestaPython.success) {
-            // Si Python detecta que falta un campo o que no hay stock en ninguna talla, manda el alert
             alert(`⚠️ Error de Validación (Python): ${respuestaPython.error}`);
             return;
         }
 
-        // Producto limpio, validado y procesado por Python
         const productoProcesado = respuestaPython.producto;
-
-        // 🚀 PASO 2: Guardamos el objeto verificado de Python directamente en Firebase desde el JS del navegador
         const urlFirestore = "https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos";
         
-        // Mapeo manual rápido al formato crudo de documentos de Firebase REST API
         const bodyFirestore = {
             fields: {
                 nombre: { stringValue: productoProcesado.nombre },
@@ -272,4 +263,101 @@ window.abrirModalEditar = (id) => {
     const inputNombre = document.getElementById('edit-nombre');
     inputNombre.value = prod.nombre;
     inputNombre.disabled = true; 
-    inputNombre.className = "w-full px-4 py-2.5 border
+    inputNombre.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 cursor-not-allowed text-gray-400 font-medium select-none";
+
+    const inputCompra = document.getElementById('edit-compra');
+    inputCompra.value = prod.precioCompra || 0;
+    inputCompra.disabled = true;
+    inputCompra.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 cursor-not-allowed text-gray-400 font-medium select-none";
+
+    const inputVenta = document.getElementById('edit-venta');
+    inputVenta.value = (Number(prod.precioCompra || 0) * 1.20).toFixed(2);
+    inputVenta.disabled = true;
+    inputVenta.className = "w-full px-4 py-2.5 border border-purple-200 rounded-xl text-sm bg-purple-50/60 cursor-not-allowed font-bold text-[#7c3aed] select-none";
+
+    TODAS_LAS_TALLAS.forEach(t => {
+        const objTalla = prod.tallas ? prod.tallas.find(x => x.talla === t) : null;
+        document.getElementById(`edit-talla-${t}`).value = objTalla ? objTalla.stock : 0;
+    });
+
+    document.getElementById('modal-editar').classList.remove('hidden');
+};
+
+window.cerrarModalEditar = () => document.getElementById('modal-editar').classList.add('hidden');
+
+document.getElementById('form-editar').onsubmit = async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('edit-id').value;
+    const prodOriginal = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
+
+    const listaTallasActualizadas = [];
+    TODAS_LAS_TALLAS.forEach(t => {
+        const stockInput = Number(document.getElementById(`edit-talla-${t}`).value || 0);
+        listaTallasActualizadas.push({ talla: t, stock: stockInput });
+    });
+
+    try {
+        const urlDoc = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos/${id}?updateMask.fieldPaths=tallas`;
+        
+        const bodyFirestore = {
+            fields: {
+                tallas: {
+                    arrayValue: {
+                        values: listaTallasActualizadas.map(t => ({
+                            mapValue: {
+                                fields: {
+                                    talla: { stringValue: t.talla },
+                                    stock: { integerValue: String(t.stock) }
+                                }
+                            }
+                        }))
+                    }
+                }
+            }
+        };
+
+        const res = await fetch(urlDoc, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyFirestore)
+        });
+
+        if (res.ok) {
+            verificarYEnviarEmailJS(prodOriginal.nombre, listaTallasActualizadas);
+            cerrarModalEditar();
+            obtenerProductosAdmin();
+        }
+    } catch (error) {
+        console.error("Error al actualizar producto:", error);
+    }
+};
+
+// ==========================================
+// ACCIONES: MODAL ELIMINAR
+// ==========================================
+window.abrirModalEliminar = (id) => {
+    const prod = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
+    if (!prod) return;
+
+    productoSeleccionadoId = id;
+    document.getElementById('del-img').src = prod.img;
+    document.getElementById('del-nombre').innerText = prod.nombre;
+    document.getElementById('del-sku').innerText = prod.sku || 'SPX-GEN';
+    document.getElementById('modal-eliminar').classList.remove('hidden');
+};
+
+window.cerrarModalEliminar = () => document.getElementById('modal-eliminar').classList.add('hidden');
+
+document.getElementById('btn-confirmar-eliminar').onclick = async () => {
+    if (!productoSeleccionadoId) return;
+    try {
+        const urlDoc = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos/${productoSeleccionadoId}`;
+        const res = await fetch(urlDoc, { method: 'DELETE' });
+        if (res.ok) {
+            cerrarModalEliminar();
+            obtenerProductosAdmin();
+        }
+    } catch (error) {
+        console.error("Error al eliminar producto:", error);
+    }
+};
