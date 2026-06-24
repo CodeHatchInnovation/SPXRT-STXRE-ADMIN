@@ -6,7 +6,7 @@ const URL_PYTHON = "http://localhost:5000/api";
 const TODAS_LAS_TALLAS = ['25', '26', '27', '28', 'CH', 'M', 'G', 'XG', 'Unitalla', '3', '4', '5', '6', '7', '8'];
 
 // ==========================================
-// CONFIGURACIÓN DE EMAILJS
+// CONFIGURACIÓN DE EMAILJS (REAL) Y API KEY
 // ==========================================
 const EMAILJS_PUBLIC_KEY = "DDMzin7mNH5wWjXBE";   
 const EMAILJS_SERVICE_ID = "service_jcmou3p";   
@@ -26,8 +26,8 @@ function verificarYEnviarEmailJS(nombreProducto, listaTallas) {
                 to_email: "brandonurielescalonagarcia@gmail.com" 
             };
             emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams)
-                .then(() => console.log(`✅ EmailJS enviado: ${nombreProducto}`))
-                .catch(err => console.error("❌ Error EmailJS:", err));
+                .then(() => console.log(`✅ EmailJS envió alerta para ${nombreProducto} [Talla: ${t.talla}]`))
+                .catch(err => console.error("❌ Error en EmailJS:", err));
         }
     });
 }
@@ -52,36 +52,48 @@ document.getElementById('form-login').onsubmit = async (e) => {
             document.getElementById('section-admin').classList.remove('hidden');
             obtenerProductosAdmin();
         } else {
-            alert(data.error || "Credenciales incorrectas.");
+            alert(data.error || "Usuario o contraseña incorrectos.");
         }
     } catch (error) {
-        alert("Error de conexión al servidor local.");
+        console.error("❌ Error en Login:", error);
+        alert("No se pudo conectar con el servidor. ¿Prendiste el CMD?");
     }
 };
 
 window.togglePassword = () => {
     const input = document.getElementById('login-pass');
     const icon = document.getElementById('eye-icon');
-    input.type = input.type === "password" ? "text" : "password";
-    icon.className = input.type === "password" ? "ph ph-eye text-lg" : "ph ph-eye-slash text-lg";
+    if (input.type === "password") {
+        input.type = "text";
+        icon.className = "ph ph-eye-slash text-lg";
+    } else {
+        input.type = "password";
+        icon.className = "ph ph-eye text-lg";
+    }
 };
 
 document.getElementById('btn-logout').onclick = () => {
     document.getElementById('section-admin').classList.add('hidden');
     document.getElementById('section-login').classList.remove('hidden');
+    document.getElementById('form-login').reset();
 };
 
 // ==========================================
-// RENDERIZADO Y BUSCADOR
+// OPERACIONES DE RENDERIZADO Y REFRESH
 // ==========================================
 async function obtenerProductosAdmin() {
     try {
         const res = await fetch(`${URL_PYTHON}/productos`); 
         const data = await res.json();
-        productosAdmin = data.success ? data.productos : [];
+        productosAdmin = data.success && data.productos ? data.productos : [];
         renderizarGridAdmin(productosAdmin);
-    } catch (error) { console.error("❌ Error obteniendo productos:", error); }
+    } catch (error) {
+        console.error("❌ Error trayendo productos:", error);
+    }
 }
+
+// Botón de Refresh
+document.getElementById('btn-refresh').onclick = () => obtenerProductosAdmin();
 
 function renderizarGridAdmin(lista) {
     const grid = document.getElementById('grid-inventario');
@@ -89,48 +101,113 @@ function renderizarGridAdmin(lista) {
     lista.forEach(p => {
         const tallasActivas = p.tallas ? p.tallas.filter(t => Number(t.stock) > 0) : [];
         const stockTotal = tallasActivas.reduce((acc, t) => acc + Number(t.stock), 0);
+        
         const badgeTallas = tallasActivas.length > 0 
             ? tallasActivas.map(t => `<span class="bg-purple-50 text-[#7c3aed] px-1.5 py-0.5 rounded text-[10px] font-bold">${t.talla}: ${t.stock}</span>`).join(' ')
             : `<span class="text-red-400 italic text-[10px] font-bold">Agotado</span>`;
 
+        const idDocumento = p.firestore_id || p.id;
         const card = document.createElement('div');
-        card.className = "product-card bg-white border border-gray-100 rounded-2xl p-5 flex flex-col shadow-sm";
+        card.className = "product-card bg-white border border-gray-100 rounded-2xl p-5 flex flex-col relative group shadow-sm";
         card.innerHTML = `
             <div class="w-full h-40 flex items-center justify-center bg-gray-50/60 rounded-xl mb-3 overflow-hidden">
-                <img src="${p.img}" class="h-32 object-contain mix-blend-multiply">
+                <img src="${p.img}" class="h-32 object-contain mix-blend-multiply transition-transform duration-500 group-hover:scale-105">
             </div>
             <h5 class="font-bold text-sm text-gray-900 truncate mb-1">${p.nombre}</h5>
-            <div class="flex flex-wrap gap-1 mb-3">${badgeTallas}</div>
-            <div class="space-y-1 text-xs text-gray-500 mb-5 mt-auto">
-                <div>Compra: $${Number(p.precioCompra).toFixed(2)}</div>
-                <div class="font-bold text-[#7c3aed]">Venta: $${Number(p.precioVenta).toFixed(2)}</div>
-                <div>Stock: ${stockTotal} pzas</div>
+            <div class="flex flex-wrap gap-1 mb-3 max-h-12 overflow-y-auto py-1">${badgeTallas}</div>
+            <div class="space-y-1.5 text-xs text-gray-500 mb-5 mt-auto">
+                <div class="flex justify-between"><span>Compra:</span><span class="font-semibold text-gray-700">$${Number(p.precioCompra || 0).toFixed(2)}</span></div>
+                <div class="flex justify-between"><span>Venta:</span><span class="font-bold text-[#7c3aed]">$${Number(p.precioVenta || 0).toFixed(2)}</span></div>
+                <div class="flex justify-between border-t border-gray-50 pt-1 mt-1"><span>Total Stock:</span><span class="font-medium text-gray-800">${stockTotal} pzas</span></div>
             </div>
-            <button onclick="abrirModalEditar('${p.firestore_id}')" class="w-full py-2 bg-purple-50 text-[#7c3aed] text-xs font-bold rounded-xl hover:bg-purple-100">Editar</button>
+            <div class="pt-2 grid grid-cols-4 gap-2">
+                <button onclick="abrirModalEditar('${idDocumento}')" class="col-span-3 py-2 border border-purple-200 text-[#7c3aed] text-xs font-bold rounded-xl bg-purple-50/30 hover:bg-purple-50 transition-all">Editar</button>
+                <button onclick="abrirModalEliminar('${idDocumento}')" class="py-2 border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-100 rounded-xl transition-all flex items-center justify-center"><i class="ph ph-trash text-base"></i></button>
+            </div>
         `;
         grid.appendChild(card);
     });
 }
 
+// Filtros y Cálculos
+document.getElementById('admin-search').addEventListener('input', function() {
+    const query = this.value.toLowerCase();
+    const filtrados = productosAdmin.filter(p => p.nombre.toLowerCase().includes(query));
+    renderizarGridAdmin(filtrados);
+});
+
+document.getElementById('add-compra').addEventListener('input', function() {
+    document.getElementById('add-venta').value = (Number(this.value || 0) * 1.20).toFixed(2);
+});
+
+document.getElementById('edit-compra').addEventListener('input', function() {
+    document.getElementById('edit-venta').value = (Number(this.value || 0) * 1.20).toFixed(2);
+});
+
 // ==========================================
-// MODAL EDITAR (BLINDADO)
+// ACCIONES: MODAL AGREGAR
+// ==========================================
+window.abrirModalAgregar = () => document.getElementById('modal-agregar').classList.remove('hidden');
+window.cerrarModalAgregar = () => {
+    document.getElementById('modal-agregar').classList.add('hidden');
+    document.getElementById('form-agregar').reset();
+};
+
+document.getElementById('form-agregar').onsubmit = async (e) => {
+    e.preventDefault();
+    const listaTallas = [];
+    TODAS_LAS_TALLAS.forEach(t => {
+        const input = document.getElementById(`add-talla-${t}`);
+        if(input) listaTallas.push({ talla: t, stock: Number(input.value || 0) });
+    });
+
+    const datosCrudos = {
+        nombre: document.getElementById('add-nombre').value,
+        desc: document.getElementById('add-desc').value,
+        img: document.getElementById('add-img').value,
+        precioCompra: Number(document.getElementById('add-compra').value),
+        tallas: listaTallas
+    };
+
+    try {
+        const resPython = await fetch(`${URL_PYTHON}/validar-producto`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(datosCrudos)
+        });
+        const resp = await resPython.json();
+        if (resp.success) {
+            cerrarModalAgregar();
+            obtenerProductosAdmin();
+        } else { alert("Error: " + resp.error); }
+    } catch (err) { console.error(err); }
+};
+
+// ==========================================
+// ACCIONES: MODAL EDITAR (CON BLINDAJE Y POST)
 // ==========================================
 window.abrirModalEditar = (id) => {
-    const prod = productosAdmin.find(p => p.firestore_id === id);
+    const prod = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
     if (!prod) return;
 
-    document.getElementById('edit-id').value = prod.firestore_id;
-    document.getElementById('edit-nombre').value = prod.nombre;
-    document.getElementById('edit-compra').value = prod.precioCompra || 0;
-    document.getElementById('edit-venta').value = (Number(prod.precioCompra || 0) * 1.20).toFixed(2);
+    document.getElementById('edit-id').value = prod.firestore_id || prod.id;
+    const inputNombre = document.getElementById('edit-nombre');
+    inputNombre.value = prod.nombre;
+    inputNombre.disabled = true; // RESTRINGIDO
+
+    const inputCompra = document.getElementById('edit-compra');
+    inputCompra.value = prod.precioCompra || 0;
+    inputCompra.disabled = false; // EDITABLE
+
+    const inputVenta = document.getElementById('edit-venta');
+    inputVenta.value = (Number(prod.precioCompra || 0) * 1.20).toFixed(2);
+    inputVenta.disabled = true; // RESTRINGIDO (Calculado)
 
     TODAS_LAS_TALLAS.forEach(t => {
         const objTalla = prod.tallas ? prod.tallas.find(x => x.talla === t) : null;
         const inputTalla = document.getElementById(`edit-talla-${t}`);
-        // 🔥 BLINDAJE: Solo si el input existe en el HTML, asigna el valor.
-        if (inputTalla) { 
-            inputTalla.value = objTalla ? objTalla.stock : 0; 
-        }
+        // BLINDAJE: Solo si existe el input, se modifica
+        if (inputTalla) inputTalla.value = objTalla ? objTalla.stock : 0;
     });
 
     document.getElementById('modal-editar').classList.remove('hidden');
@@ -142,11 +219,10 @@ document.getElementById('form-editar').onsubmit = async (e) => {
     const listaTallas = [];
     TODAS_LAS_TALLAS.forEach(t => {
         const input = document.getElementById(`edit-talla-${t}`);
-        if (input) { listaTallas.push({ talla: t, stock: Number(input.value || 0) }); }
+        if (input) listaTallas.push({ talla: t, stock: Number(input.value || 0) });
     });
 
     try {
-        // 🔥 CAMBIO: Usamos POST en lugar de PATCH para evitar el error de CORS Preflight
         const res = await fetch(`${URL_PYTHON}/productos/${id}`, {
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' },
@@ -161,10 +237,27 @@ document.getElementById('form-editar').onsubmit = async (e) => {
             document.getElementById('modal-editar').classList.add('hidden');
             obtenerProductosAdmin();
         } else { alert("Error al actualizar."); }
-    } catch (error) { console.error("Error:", error); }
+    } catch (err) { console.error(err); }
 };
 
-window.cerrarModalEditar = () => document.getElementById('modal-editar').classList.add('hidden');
-document.getElementById('edit-compra').addEventListener('input', (e) => {
-    document.getElementById('edit-venta').value = (Number(e.target.value) * 1.20).toFixed(2);
-});
+// ==========================================
+// ACCIONES: MODAL ELIMINAR
+// ==========================================
+window.abrirModalEliminar = (id) => {
+    const prod = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
+    if (!prod) return;
+    productoSeleccionadoId = id;
+    document.getElementById('del-img').src = prod.img;
+    document.getElementById('del-nombre').innerText = prod.nombre;
+    document.getElementById('modal-eliminar').classList.remove('hidden');
+};
+
+document.getElementById('btn-confirmar-eliminar').onclick = async () => {
+    try {
+        const res = await fetch(`https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos/${productoSeleccionadoId}?key=${EMAILJS_PUBLIC_KEY}`, { method: 'DELETE' });
+        if (res.ok) {
+            document.getElementById('modal-eliminar').classList.add('hidden');
+            obtenerProductosAdmin();
+        }
+    } catch (err) { console.error(err); }
+};
