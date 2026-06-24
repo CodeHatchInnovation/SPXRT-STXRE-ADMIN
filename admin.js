@@ -262,6 +262,13 @@ window.abrirModalEditar = (id) => {
     inputVenta.className = "w-full px-4 py-2.5 border border-purple-200 rounded-xl text-sm bg-purple-50/60 cursor-not-allowed font-bold text-[#7c3aed] select-none";
 
     TODAS_LAS_TALLAS.forEach(t => {
+        const inputTalla = document.getElementById(`edit-talla-${t}`);
+        if(inputTalla){
+            inputTalla.value = 0;
+        }
+    });
+    
+    TODAS_LAS_TALLAS.forEach(t => {
         const objTalla = prod.tallas ? prod.tallas.find(x => x.talla === t) : null;
         const inputTalla = document.getElementById(`edit-talla-${t}`);
         // 🔥 BLINDAJE: Solo asigna si el input existe
