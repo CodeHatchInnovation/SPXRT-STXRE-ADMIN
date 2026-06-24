@@ -7,8 +7,11 @@ from firebase_admin import credentials, firestore
 
 app = Flask(__name__)
 
-# Permitimos que tu GitHub Pages local o en línea se conecte sin bloqueos de CORS
+# Permitimos que tu GitHub Pages local se conecte sin bloqueos de CORS
 CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+# Variable global para la base de datos
+db = None
 
 # ==========================================
 # CONFIGURACIÓN DE FIREBASE LOCAL
@@ -27,16 +30,13 @@ if os.path.exists(ruta_key):
         cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
         print("🔥 FIREBASE CONECTADO LOCALMENTE: Éxito total.")
+        
+        # Inicializamos el cliente de firestore de forma global y limpia
+        db = firestore.client()
     except Exception as e:
         print(f"❌ CRÍTICO: Firebase rechazó el archivo: {e}")
 else:
     print(f"❌ CRÍTICO: No se encontró el archivo '{nombre_archivo_json}' en esta carpeta.")
-
-try:
-    db = firestore.client()
-except Exception as e:
-    print(f"❌ No se pudo conectar el cliente de Firestore: {e}")
-    db = None
 
 # ==========================================
 # ENDPOINTS DE LA API (TODO EL TRABAJO PASA POR AQUÍ)
@@ -49,8 +49,9 @@ def obtener_productos():
         if not db:
             db = firestore.client()
             
+        # .get() es drásticamente más estable y rápido en entornos locales de Windows que .stream()
         productos_ref = db.collection('productos')
-        docs = productos_ref.stream()
+        docs = productos_ref.get()
         
         lista_productos = []
         for doc in docs:
@@ -60,13 +61,19 @@ def obtener_productos():
             data['firestore_id'] = doc.id
             lista_productos.append(data)
             
+        print(f"✅ ¡Se enviaron {len(lista_productos)} productos al frontend exitosamente!")
         return jsonify(lista_productos), 200
     except Exception as e:
+        print(f"❌ Error interno en GET /api/productos: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/productos', methods=['POST'])
 def agregar_producto():
+    global db
     try:
+        if not db:
+            db = firestore.client()
+
         data = request.json
         precio_compra = float(data.get('precioCompra', 0))
         precio_venta = round(precio_compra * 1.20, 2) # Regla del +20%
@@ -83,13 +90,19 @@ def agregar_producto():
         
         doc_ref = db.collection('productos').document()
         doc_ref.set(nuevo_producto)
+        print(f"✨ Producto creado con éxito: {nuevo_producto['nombre']}")
         return jsonify({"message": "Creado con éxito", "producto": nuevo_producto}), 201
     except Exception as e:
+        print(f"❌ Error interno en POST /api/productos: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/productos/<id>', methods=['PUT'])
 def editar_producto(id):
+    global db
     try:
+        if not db:
+            db = firestore.client()
+
         data = request.json
         doc_ref = db.collection('productos').document(id)
         prod_doc = doc_ref.get()
@@ -106,17 +119,25 @@ def editar_producto(id):
         }
         
         doc_ref.update(actualizacion)
+        print(f"🔧 Producto actualizado con éxito: ID {id}")
         return jsonify({"message": "Actualizado"}), 200
     except Exception as e:
+        print(f"❌ Error interno en PUT /api/productos: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/productos/<id>', methods=['DELETE'])
 def eliminar_producto(id):
+    global db
     try:
+        if not db:
+            db = firestore.client()
+
         doc_ref = db.collection('productos').document(id)
         doc_ref.delete()
+        print(f"🗑️ Producto eliminado con éxito: ID {id}")
         return jsonify({"message": "Eliminado"}), 200
     except Exception as e:
+        print(f"❌ Error interno en DELETE /api/productos: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
