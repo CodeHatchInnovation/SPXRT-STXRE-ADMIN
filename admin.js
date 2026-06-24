@@ -86,7 +86,6 @@ document.getElementById('btn-logout').onclick = () => {
 // ==========================================
 async function obtenerProductosAdmin() {
     try {
-        // 🔥 Puente directo a Python para evadir el error 403 de Firebase
         const res = await fetch(`${URL_PYTHON}/productos`); 
         const data = await res.json();
         
@@ -140,9 +139,16 @@ document.getElementById('admin-search').addEventListener('input', function() {
     renderizarGridAdmin(filtrados);
 });
 
+// Cálculo automático +20% al agregar nuevo producto
 document.getElementById('add-compra').addEventListener('input', function() {
     const costo = Number(this.value || 0);
     document.getElementById('add-venta').value = (costo * 1.20).toFixed(2);
+});
+
+// 🔥 NUEVO: Cálculo automático +20% en tiempo real al EDITAR producto existente
+document.getElementById('edit-compra').addEventListener('input', function() {
+    const costo = Number(this.value || 0);
+    document.getElementById('edit-venta').value = (costo * 1.20).toFixed(2);
 });
 
 // ==========================================
@@ -230,7 +236,7 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
 };
 
 // ==========================================
-// ACCIONES: MODAL EDITAR
+// ACCIONES: MODAL EDITAR (CON PRECIO DINÁMICO)
 // ==========================================
 window.abrirModalEditar = (id) => {
     const prod = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
@@ -244,11 +250,13 @@ window.abrirModalEditar = (id) => {
     inputNombre.disabled = true; 
     inputNombre.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 cursor-not-allowed text-gray-400 font-medium select-none";
 
+    // 🔓 CORREGIDO: Ahora el precio de compra SÍ se puede editar libremente
     const inputCompra = document.getElementById('edit-compra');
     inputCompra.value = prod.precioCompra || 0;
-    inputCompra.disabled = true;
-    inputCompra.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 cursor-not-allowed text-gray-400 font-medium select-none";
+    inputCompra.disabled = false;
+    inputCompra.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-purple-500 font-medium text-gray-800";
 
+    // 🔒 El precio de venta permanece bloqueado, calculándose dinámicamente
     const inputVenta = document.getElementById('edit-venta');
     inputVenta.value = (Number(prod.precioCompra || 0) * 1.20).toFixed(2);
     inputVenta.disabled = true;
@@ -269,6 +277,9 @@ document.getElementById('form-editar').onsubmit = async (e) => {
     const id = document.getElementById('edit-id').value;
     const prodOriginal = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
 
+    const nuevaCompra = float(document.getElementById('edit-compra').value || 0);
+    const nuevaVenta = float(document.getElementById('edit-venta').value || 0);
+
     const listaTallasActualizadas = [];
     TODAS_LAS_TALLAS.forEach(t => {
         const stockInput = Number(document.getElementById(`edit-talla-${t}`).value || 0);
@@ -276,10 +287,13 @@ document.getElementById('form-editar').onsubmit = async (e) => {
     });
 
     try {
-        const urlDoc = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos/${id}?updateMask.fieldPaths=tallas&key=${EMAILJS_PUBLIC_KEY}`;
+        // 🔥 Agregamos precioCompra y precioVenta a la máscara de actualización de Firebase para guardar los nuevos valores económicos
+        const urlDoc = `https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos/${id}?updateMask.fieldPaths=tallas&updateMask.fieldPaths=precioCompra&updateMask.fieldPaths=precioVenta&key=${EMAILJS_PUBLIC_KEY}`;
         
         const bodyFirestore = {
             fields: {
+                precioCompra: { doubleValue: nuevaCompra },
+                precioVenta: { doubleValue: nuevaVenta },
                 tallas: {
                     arrayValue: {
                         values: listaTallasActualizadas.map(t => ({
@@ -330,7 +344,7 @@ window.cerrarModalEliminar = () => document.getElementById('modal-eliminar').cla
 document.getElementById('btn-confirmar-eliminar').onclick = async () => {
     if (!productoSeleccionadoId) return;
     try {
-        const urlDoc = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos/${productoSeleccionadoId}?key=${EMAILJS_PUBLIC_KEY}`;
+        const urlDoc = `https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos/${productoSeleccionadoId}?key=${EMAILJS_PUBLIC_KEY}`;
         const res = await fetch(urlDoc, { method: 'DELETE' });
         if (res.ok) {
             cerrarModalEliminar();
