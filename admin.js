@@ -145,7 +145,7 @@ document.getElementById('add-compra').addEventListener('input', function() {
     document.getElementById('add-venta').value = (costo * 1.20).toFixed(2);
 });
 
-// 🔥 NUEVO: Cálculo automático +20% en tiempo real al EDITAR producto existente
+// Cálculo automático +20% en tiempo real al EDITAR producto existente
 document.getElementById('edit-compra').addEventListener('input', function() {
     const costo = Number(this.value || 0);
     document.getElementById('edit-venta').value = (costo * 1.20).toFixed(2);
@@ -191,7 +191,8 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
         }
 
         const productoProcesado = respuestaPython.producto;
-        const urlFirestore = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos?key=${EMAILJS_PUBLIC_KEY}`;
+        // 🔥 Corregido aquí para que apunte a tu ID real en caso de que agregues desde aquí
+        const urlFirestore = `https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos?key=${EMAILJS_PUBLIC_KEY}`;
         
         const bodyFirestore = {
             fields: {
@@ -250,13 +251,13 @@ window.abrirModalEditar = (id) => {
     inputNombre.disabled = true; 
     inputNombre.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 cursor-not-allowed text-gray-400 font-medium select-none";
 
-    // 🔓 CORREGIDO: Ahora el precio de compra SÍ se puede editar libremente
+    // El precio de compra se mantiene editable libremente
     const inputCompra = document.getElementById('edit-compra');
     inputCompra.value = prod.precioCompra || 0;
     inputCompra.disabled = false;
     inputCompra.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-purple-500 font-medium text-gray-800";
 
-    // 🔒 El precio de venta permanece bloqueado, calculándose dinámicamente
+    // El precio de venta permanece bloqueado, calculándose dinámicamente
     const inputVenta = document.getElementById('edit-venta');
     inputVenta.value = (Number(prod.precioCompra || 0) * 1.20).toFixed(2);
     inputVenta.disabled = true;
@@ -277,7 +278,7 @@ document.getElementById('form-editar').onsubmit = async (e) => {
     const id = document.getElementById('edit-id').value;
     const prodOriginal = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
 
-    // ✅ Corregido con parseFloat
+    // Corrección definitiva con parseFloat
     const nuevaCompra = parseFloat(document.getElementById('edit-compra').value || 0);
     const nuevaVenta = parseFloat(document.getElementById('edit-venta').value || 0);
 
@@ -288,7 +289,7 @@ document.getElementById('form-editar').onsubmit = async (e) => {
     });
 
     try {
-        // 🔥 Agregamos precioCompra y precioVenta a la máscara de actualización de Firebase para guardar los nuevos valores económicos
+        // Corrección de URL agregando campos económicos a la máscara de actualización para que admita guardar todo junto
         const urlDoc = `https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos/${id}?updateMask.fieldPaths=tallas&updateMask.fieldPaths=precioCompra&updateMask.fieldPaths=precioVenta&key=${EMAILJS_PUBLIC_KEY}`;
         
         const bodyFirestore = {
@@ -320,6 +321,10 @@ document.getElementById('form-editar').onsubmit = async (e) => {
             verificarYEnviarEmailJS(prodOriginal.nombre, listaTallasActualizadas);
             cerrarModalEditar();
             obtenerProductosAdmin();
+        } else {
+            const errorData = await res.json();
+            console.error("❌ Error devuelto por Firebase:", errorData);
+            alert("Firebase rechazó la actualización. Abre la consola de desarrollo para inspeccionar el problema.");
         }
     } catch (error) {
         console.error("Error al actualizar producto:", error);
