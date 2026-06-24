@@ -1,8 +1,8 @@
 let productosAdmin = [];
 let productoSeleccionadoId = null;
 
-// URL apuntando a tu servidor de Python corriendo de forma local
-const URL_API = "http://localhost:5000/api/productos";
+// 🔥 DIRECCIONES CLAVE
+const URL_PYTHON = "http://localhost:5000/api"; // Servidor local para lógica
 const TODAS_LAS_TALLAS = ['25', '26', '27', '28', 'CH', 'M', 'G', 'XG', 'Unitalla'];
 
 // ==========================================
@@ -34,19 +34,32 @@ function verificarYEnviarEmailJS(nombreProducto, listaTallas) {
 }
 
 // ==========================================
-// CONTROL DE LOGIN Y LOGOUT
+// CONTROL DE LOGIN Y LOGOUT (CONECTADO A PYTHON)
 // ==========================================
-document.getElementById('form-login').onsubmit = (e) => {
+document.getElementById('form-login').onsubmit = async (e) => {
     e.preventDefault();
     const user = document.getElementById('login-user').value;
     const pass = document.getElementById('login-pass').value;
 
-    if(user === "admin" && pass === "spxrt123") {
-        document.getElementById('section-login').classList.add('hidden');
-        document.getElementById('section-admin').classList.remove('hidden');
-        obtenerProductosAdmin();
-    } else {
-        alert("Usuario o contraseña incorrectos.");
+    try {
+        const res = await fetch(`${URL_PYTHON}/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user, pass })
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            document.getElementById('section-login').classList.add('hidden');
+            document.getElementById('section-admin').classList.remove('hidden');
+            obtenerProductosAdmin();
+        } else {
+            alert(data.error || "Usuario o contraseña incorrectos.");
+        }
+    } catch (error) {
+        console.error("❌ Error conectando al Login de Python:", error);
+        alert("No se pudo conectar con el servidor local de Python para verificar tus credenciales. ¿Prendiste el CMD?");
     }
 };
 
@@ -73,12 +86,39 @@ document.getElementById('btn-logout').onclick = () => {
 // ==========================================
 async function obtenerProductosAdmin() {
     try {
-        const res = await fetch(URL_API);
-        productosAdmin = await res.json();
+        // Obtenemos los productos de Firebase usando una petición directa/simulada limpia de bloqueos
+        // Nota: Asegúrate de que tu base web esté inicializada o usa el fetch de lectura directa de tu base
+        const res = await fetch("https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos"); 
+        const data = await res.json();
+        
+        productosAdmin = data.documents ? data.documents.map(doc => {
+            const fields = doc.fields || {};
+            const id = doc.name.split('/').pop();
+            
+            // Reconstrucción del mapa de tallas desde la API REST de Firebase
+            let listaTallas = [];
+            if (fields.tallas && fields.tallas.arrayValue && fields.tallas.arrayValue.values) {
+                listaTallas = fields.tallas.arrayValue.values.map(v => ({
+                    talla: v.mapValue.fields.talla.stringValue,
+                    stock: Number(v.mapValue.fields.stock.integerValue || 0)
+                }));
+            }
+
+            return {
+                firestore_id: id,
+                nombre: fields.nombre?.stringValue || '',
+                desc: fields.desc?.stringValue || '',
+                img: fields.img?.stringValue || '',
+                sku: fields.sku?.stringValue || '',
+                precioCompra: Number(fields.precioCompra?.doubleValue || fields.precioCompra?.integerValue || 0),
+                precioVenta: Number(fields.precioVenta?.doubleValue || fields.precioVenta?.integerValue || 0),
+                tallas: listaTallas
+            };
+        }) : [];
+
         renderizarGridAdmin(productosAdmin);
     } catch (error) {
-        console.error("Error conectando con Python Local:", error);
-        alert("No se pudo conectar con el servidor local de Python. Asegúrate de correr 'python app.py' en tu terminal.");
+        console.error("Error trayendo productos de Firebase:", error);
     }
 }
 
@@ -94,7 +134,6 @@ function renderizarGridAdmin(lista) {
             ? tallasActivas.map(t => `<span class="bg-purple-50 text-[#7c3aed] px-1.5 py-0.5 rounded text-[10px] font-bold">${t.talla}: ${t.stock}</span>`).join(' ')
             : `<span class="text-red-400 italic text-[10px] font-bold">Agotado</span>`;
 
-        // Usamos p.firestore_id para identificar unívocamente el documento en las acciones
         const idDocumento = p.firestore_id || p.id;
 
         const card = document.createElement('div');
@@ -131,7 +170,7 @@ document.getElementById('add-compra').addEventListener('input', function() {
 });
 
 // ==========================================
-// ACCIONES: MODAL AGREGAR
+// ACCIONES: MODAL AGREGAR (FILTRO EN PYTHON)
 // ==========================================
 window.abrirModalAgregar = () => document.getElementById('modal-agregar').classList.remove('hidden');
 window.cerrarModalAgregar = () => {
@@ -147,7 +186,7 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
         listaTallas.push({ talla: t, stock: stockInput });
     });
 
-    const nuevo = {
+    const datosCrudos = {
         nombre: document.getElementById('add-nombre').value,
         desc: document.getElementById('add-desc').value,
         img: document.getElementById('add-img').value,
@@ -156,19 +195,67 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
     };
 
     try {
-        const res = await fetch(URL_API, {
+        // 🚀 PASO 1: Le mandamos los datos a Python para que los valide y calcule el +20% y SKU
+        const resPython = await fetch(`${URL_PYTHON}/validar-producto`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(nuevo)
+            body: JSON.stringify(datosCrudos)
         });
 
-        if (res.ok) {
-            verificarYEnviarEmailJS(nuevo.nombre, listaTallas);
+        const respuestaPython = await resPython.json();
+
+        if (!resPython.ok || !respuestaPython.success) {
+            // Si Python detecta que falta un campo o que no hay stock en ninguna talla, manda el alert
+            alert(`⚠️ Error de Validación (Python): ${respuestaPython.error}`);
+            return;
+        }
+
+        // Producto limpio, validado y procesado por Python
+        const productoProcesado = respuestaPython.producto;
+
+        // 🚀 PASO 2: Guardamos el objeto verificado de Python directamente en Firebase desde el JS del navegador
+        const urlFirestore = "https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos";
+        
+        // Mapeo manual rápido al formato crudo de documentos de Firebase REST API
+        const bodyFirestore = {
+            fields: {
+                nombre: { stringValue: productoProcesado.nombre },
+                desc: { stringValue: productoProcesado.desc },
+                img: { stringValue: productoProcesado.img },
+                sku: { stringValue: productoProcesado.sku },
+                precioCompra: { doubleValue: productoProcesado.precioCompra },
+                precioVenta: { doubleValue: productoProcesado.precioVenta },
+                tallas: {
+                    arrayValue: {
+                        values: productoProcesado.tallas.map(t => ({
+                            mapValue: {
+                                fields: {
+                                    talla: { stringValue: t.talla },
+                                    stock: { integerValue: String(t.stock) }
+                                }
+                            }
+                        }))
+                    }
+                }
+            }
+        };
+
+        const resFirebase = await fetch(urlFirestore, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyFirestore)
+        });
+
+        if (resFirebase.ok) {
+            verificarYEnviarEmailJS(productoProcesado.nombre, productoProcesado.tallas);
             cerrarModalAgregar();
             obtenerProductosAdmin();
+        } else {
+            alert("Error al intentar guardar en Firebase.");
         }
     } catch (error) {
-        console.error("Error al agregar producto:", error);
+        console.error("❌ Error en el proceso de agregado/validación:", error);
+        alert("Error de comunicación. Asegúrate de tener Python encendido.");
     }
 };
 
@@ -185,81 +272,4 @@ window.abrirModalEditar = (id) => {
     const inputNombre = document.getElementById('edit-nombre');
     inputNombre.value = prod.nombre;
     inputNombre.disabled = true; 
-    inputNombre.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 cursor-not-allowed text-gray-400 font-medium select-none focus:ring-0 focus:border-gray-200";
-
-    const inputCompra = document.getElementById('edit-compra');
-    inputCompra.value = prod.precioCompra || 0;
-    inputCompra.disabled = true;
-    inputCompra.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 cursor-not-allowed text-gray-400 font-medium select-none focus:ring-0 focus:border-gray-200";
-
-    const inputVenta = document.getElementById('edit-venta');
-    inputVenta.value = (Number(prod.precioCompra || 0) * 1.20).toFixed(2);
-    inputVenta.disabled = true;
-    inputVenta.className = "w-full px-4 py-2.5 border border-purple-200 rounded-xl text-sm bg-purple-50/60 cursor-not-allowed font-bold text-[#7c3aed] select-none focus:ring-0 focus:border-purple-200";
-
-    TODAS_LAS_TALLAS.forEach(t => {
-        const objTalla = prod.tallas ? prod.tallas.find(x => x.talla === t) : null;
-        document.getElementById(`edit-talla-${t}`).value = objTalla ? objTalla.stock : 0;
-    });
-
-    document.getElementById('modal-editar').classList.remove('hidden');
-};
-
-window.cerrarModalEditar = () => document.getElementById('modal-editar').classList.add('hidden');
-
-document.getElementById('form-editar').onsubmit = async (e) => {
-    e.preventDefault();
-    const id = document.getElementById('edit-id').value;
-    const prodOriginal = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
-
-    const listaTallasActualizadas = [];
-    TODAS_LAS_TALLAS.forEach(t => {
-        const stockInput = Number(document.getElementById(`edit-talla-${t}`).value || 0);
-        listaTallasActualizadas.push({ talla: t, stock: stockInput });
-    });
-
-    try {
-        const res = await fetch(`${URL_API}/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tallas: listaTallasActualizadas })
-        });
-
-        if (res.ok) {
-            verificarYEnviarEmailJS(prodOriginal.nombre, listaTallasActualizadas);
-            cerrarModalEditar();
-            obtenerProductosAdmin();
-        }
-    } catch (error) {
-        console.error("Error al actualizar producto:", error);
-    }
-};
-
-// ==========================================
-// ACCIONES: MODAL ELIMINAR
-// ==========================================
-window.abrirModalEliminar = (id) => {
-    const prod = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
-    if (!prod) return;
-
-    productoSeleccionadoId = id;
-    document.getElementById('del-img').src = prod.img;
-    document.getElementById('del-nombre').innerText = prod.nombre;
-    document.getElementById('del-sku').innerText = prod.sku || 'SPX-GEN';
-    document.getElementById('modal-eliminar').classList.remove('hidden');
-};
-
-window.cerrarModalEliminar = () => document.getElementById('modal-eliminar').classList.add('hidden');
-
-document.getElementById('btn-confirmar-eliminar').onclick = async () => {
-    if (!productoSeleccionadoId) return;
-    try {
-        const res = await fetch(`${URL_API}/${productoSeleccionadoId}`, { method: 'DELETE' });
-        if (res.ok) {
-            cerrarModalEliminar();
-            obtenerProductosAdmin();
-        }
-    } catch (error) {
-        console.error("Error al eliminar producto:", error);
-    }
-};
+    inputNombre.className = "w-full px-4 py-2.5 border
