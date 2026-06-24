@@ -5,9 +5,12 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from firebase_admin import credentials, firestore
 
+# 🔥 SOLUCIÓN CRÍTICA PARA WINDOWS: Desactiva gRPC para evitar que el script se congele
+os.environ["GOOGLE_CLOUD_DISABLE_GRPC"] = "True"
+
 app = Flask(__name__)
 
-# Permitimos que tu GitHub Pages local se conecte sin bloqueos de CORS
+# Permitimos que tu GitHub Pages se conecte localmente sin bloqueos de CORS
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Variable global para la base de datos
@@ -29,17 +32,18 @@ if os.path.exists(ruta_key):
             
         cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
-        print("🔥 FIREBASE CONECTADO LOCALMENTE: Éxito total.")
+        print("🔥 FIREBASE CONFIGURADO: Credenciales leídas con éxito.")
         
-        # Inicializamos el cliente de firestore de forma global y limpia
+        # Inicializamos el cliente de Firestore de forma limpia
         db = firestore.client()
+        print("⚡ CLIENTE FIRESTORE ACTIVO: Conexión establecida localmente.")
     except Exception as e:
         print(f"❌ CRÍTICO: Firebase rechazó el archivo: {e}")
 else:
     print(f"❌ CRÍTICO: No se encontró el archivo '{nombre_archivo_json}' en esta carpeta.")
 
 # ==========================================
-# ENDPOINTS DE LA API (TODO EL TRABAJO PASA POR AQUÍ)
+# ENDPOINTS DE LA API (CRUD COMPLETO)
 # ==========================================
 
 @app.route('/api/productos', methods=['GET'])
@@ -49,7 +53,7 @@ def obtener_productos():
         if not db:
             db = firestore.client()
             
-        # .get() es drásticamente más estable y rápido en entornos locales de Windows que .stream()
+        # .get() es drásticamente más estable en Windows local que .stream()
         productos_ref = db.collection('productos')
         docs = productos_ref.get()
         
@@ -61,7 +65,7 @@ def obtener_productos():
             data['firestore_id'] = doc.id
             lista_productos.append(data)
             
-        print(f"✅ ¡Se enviaron {len(lista_productos)} productos al frontend exitosamente!")
+        print(f"✅ ¡Se enviaron {len(lista_productos)} productos al frontend con éxito!")
         return jsonify(lista_productos), 200
     except Exception as e:
         print(f"❌ Error interno en GET /api/productos: {e}")
