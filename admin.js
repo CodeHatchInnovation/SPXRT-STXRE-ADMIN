@@ -277,8 +277,9 @@ document.getElementById('form-editar').onsubmit = async (e) => {
     const id = document.getElementById('edit-id').value;
     const prodOriginal = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
 
-    const nuevaCompra = float(document.getElementById('edit-compra').value || 0);
-    const nuevaVenta = float(document.getElementById('edit-venta').value || 0);
+    // ✅ Corregido con parseFloat
+    const nuevaCompra = parseFloat(document.getElementById('edit-compra').value || 0);
+    const nuevaVenta = parseFloat(document.getElementById('edit-venta').value || 0);
 
     const listaTallasActualizadas = [];
     TODAS_LAS_TALLAS.forEach(t => {
