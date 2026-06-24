@@ -103,8 +103,8 @@ def obtener_productos_contingencia():
         return jsonify({"success": False, "error": f"Error de comunicación backend: {str(e)}"}), 500
 
 
-# 🔥 NUEVA RUTA PUENTE: Evita el bloqueo de CORS del navegador haciendo el PATCH directo desde Python
-@app.route('/api/productos/<id_doc>', methods=['PATCH'])
+# 🔥 PUENTE EVITA-CORS: Cambiado a POST para saltarnos las restricciones del navegador de GitHub Pages
+@app.route('/api/productos/<id_doc>', methods=['POST'])
 def editar_producto_contingencia(id_doc):
     try:
         data = request.json or {}
@@ -136,6 +136,7 @@ def editar_producto_contingencia(id_doc):
 
         url_doc = f"https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos/{id_doc}?updateMask.fieldPaths=tallas&updateMask.fieldPaths=precioCompra&updateMask.fieldPaths=precioVenta&key={api_key}"
         
+        # Python hace el PATCH interno de servidor a servidor (aquí no hay bloqueo CORS)
         res = requests.patch(url_doc, json=body_firestore)
         
         if res.status_code == 200:
