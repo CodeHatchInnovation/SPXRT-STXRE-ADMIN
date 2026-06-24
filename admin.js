@@ -25,6 +25,7 @@ function verificarYEnviarEmailJS(nombreProducto, listaTallas) {
                 stock_current: t.stock,
                 to_email: "brandonurielescalonagarcia@gmail.com" 
             };
+
             emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams)
                 .then(() => console.log(`✅ EmailJS envió alerta para ${nombreProducto} [Talla: ${t.talla}]`))
                 .catch(err => console.error("❌ Error en EmailJS:", err));
@@ -46,7 +47,9 @@ document.getElementById('form-login').onsubmit = async (e) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user, pass })
         });
+
         const data = await res.json();
+
         if (res.ok && data.success) {
             document.getElementById('section-login').classList.add('hidden');
             document.getElementById('section-admin').classList.remove('hidden');
@@ -55,8 +58,8 @@ document.getElementById('form-login').onsubmit = async (e) => {
             alert(data.error || "Usuario o contraseña incorrectos.");
         }
     } catch (error) {
-        console.error("❌ Error en Login:", error);
-        alert("No se pudo conectar con el servidor. ¿Prendiste el CMD?");
+        console.error("❌ Error conectando al Login de Python:", error);
+        alert("No se pudo conectar con el servidor local de Python para verificar tus credenciales. ¿Prendiste el CMD?");
     }
 };
 
@@ -79,25 +82,27 @@ document.getElementById('btn-logout').onclick = () => {
 };
 
 // ==========================================
-// OPERACIONES DE RENDERIZADO Y REFRESH
+// OPERACIONES DE RENDERIZADO Y BUSCADOR
 // ==========================================
 async function obtenerProductosAdmin() {
     try {
         const res = await fetch(`${URL_PYTHON}/productos`); 
         const data = await res.json();
+        
         productosAdmin = data.success && data.productos ? data.productos : [];
         renderizarGridAdmin(productosAdmin);
     } catch (error) {
-        console.error("❌ Error trayendo productos:", error);
+        console.error("❌ Error trayendo productos a través de Python:", error);
     }
 }
 
-// Botón de Refresh
+// 🔥 NUEVO: BOTÓN REFRESH
 document.getElementById('btn-refresh').onclick = () => obtenerProductosAdmin();
 
 function renderizarGridAdmin(lista) {
     const grid = document.getElementById('grid-inventario');
     grid.innerHTML = "";
+
     lista.forEach(p => {
         const tallasActivas = p.tallas ? p.tallas.filter(t => Number(t.stock) > 0) : [];
         const stockTotal = tallasActivas.reduce((acc, t) => acc + Number(t.stock), 0);
@@ -107,6 +112,7 @@ function renderizarGridAdmin(lista) {
             : `<span class="text-red-400 italic text-[10px] font-bold">Agotado</span>`;
 
         const idDocumento = p.firestore_id || p.id;
+
         const card = document.createElement('div');
         card.className = "product-card bg-white border border-gray-100 rounded-2xl p-5 flex flex-col relative group shadow-sm";
         card.innerHTML = `
@@ -129,19 +135,22 @@ function renderizarGridAdmin(lista) {
     });
 }
 
-// Filtros y Cálculos
 document.getElementById('admin-search').addEventListener('input', function() {
     const query = this.value.toLowerCase();
     const filtrados = productosAdmin.filter(p => p.nombre.toLowerCase().includes(query));
     renderizarGridAdmin(filtrados);
 });
 
+// Cálculo dinámico +20% al agregar
 document.getElementById('add-compra').addEventListener('input', function() {
-    document.getElementById('add-venta').value = (Number(this.value || 0) * 1.20).toFixed(2);
+    const costo = Number(this.value || 0);
+    document.getElementById('add-venta').value = (costo * 1.20).toFixed(2);
 });
 
+// Cálculo dinámico +20% al editar
 document.getElementById('edit-compra').addEventListener('input', function() {
-    document.getElementById('edit-venta').value = (Number(this.value || 0) * 1.20).toFixed(2);
+    const costo = Number(this.value || 0);
+    document.getElementById('edit-venta').value = (costo * 1.20).toFixed(2);
 });
 
 // ==========================================
@@ -158,7 +167,7 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
     const listaTallas = [];
     TODAS_LAS_TALLAS.forEach(t => {
         const input = document.getElementById(`add-talla-${t}`);
-        if(input) listaTallas.push({ talla: t, stock: Number(input.value || 0) });
+        if (input) listaTallas.push({ talla: t, stock: Number(input.value || 0) });
     });
 
     const datosCrudos = {
@@ -175,12 +184,56 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(datosCrudos)
         });
-        const resp = await resPython.json();
-        if (resp.success) {
+
+        const respuestaPython = await resPython.json();
+
+        if (!resPython.ok || !respuestaPython.success) {
+            alert(`⚠️ Error de Validación (Python): ${respuestaPython.error}`);
+            return;
+        }
+
+        const productoProcesado = respuestaPython.producto;
+        const urlFirestore = `https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos?key=${EMAILJS_PUBLIC_KEY}`;
+        
+        const bodyFirestore = {
+            fields: {
+                nombre: { stringValue: productoProcesado.nombre },
+                desc: { stringValue: productoProcesado.desc },
+                img: { stringValue: productoProcesado.img },
+                sku: { stringValue: productoProcesado.sku },
+                precioCompra: { doubleValue: productoProcesado.precioCompra },
+                precioVenta: { doubleValue: productoProcesado.precioVenta },
+                tallas: {
+                    arrayValue: {
+                        values: productoProcesado.tallas.map(t => ({
+                            mapValue: {
+                                fields: {
+                                    talla: { stringValue: t.talla },
+                                    stock: { integerValue: String(t.stock) }
+                                }
+                            }
+                        }))
+                    }
+                }
+            }
+        };
+
+        const resFirebase = await fetch(urlFirestore, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyFirestore)
+        });
+
+        if (resFirebase.ok) {
+            verificarYEnviarEmailJS(productoProcesado.nombre, productoProcesado.tallas);
             cerrarModalAgregar();
             obtenerProductosAdmin();
-        } else { alert("Error: " + resp.error); }
-    } catch (err) { console.error(err); }
+        } else {
+            alert("Error al intentar guardar en Firebase.");
+        }
+    } catch (error) {
+        console.error("❌ Error en el proceso de agregado/validación:", error);
+    }
 };
 
 // ==========================================
@@ -190,54 +243,74 @@ window.abrirModalEditar = (id) => {
     const prod = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
     if (!prod) return;
 
-    document.getElementById('edit-id').value = prod.firestore_id || prod.id;
+    const idDocumento = prod.firestore_id || prod.id;
+    document.getElementById('edit-id').value = idDocumento;
+    
     const inputNombre = document.getElementById('edit-nombre');
     inputNombre.value = prod.nombre;
-    inputNombre.disabled = true; // RESTRINGIDO
+    inputNombre.disabled = true; 
+    inputNombre.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 cursor-not-allowed text-gray-400 font-medium select-none";
 
     const inputCompra = document.getElementById('edit-compra');
     inputCompra.value = prod.precioCompra || 0;
-    inputCompra.disabled = false; // EDITABLE
+    inputCompra.disabled = false;
+    inputCompra.className = "w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-purple-500 font-medium text-gray-800";
 
     const inputVenta = document.getElementById('edit-venta');
     inputVenta.value = (Number(prod.precioCompra || 0) * 1.20).toFixed(2);
-    inputVenta.disabled = true; // RESTRINGIDO (Calculado)
+    inputVenta.disabled = true;
+    inputVenta.className = "w-full px-4 py-2.5 border border-purple-200 rounded-xl text-sm bg-purple-50/60 cursor-not-allowed font-bold text-[#7c3aed] select-none";
 
     TODAS_LAS_TALLAS.forEach(t => {
         const objTalla = prod.tallas ? prod.tallas.find(x => x.talla === t) : null;
         const inputTalla = document.getElementById(`edit-talla-${t}`);
-        // BLINDAJE: Solo si existe el input, se modifica
+        // 🔥 BLINDAJE: Solo asigna si el input existe
         if (inputTalla) inputTalla.value = objTalla ? objTalla.stock : 0;
     });
 
     document.getElementById('modal-editar').classList.remove('hidden');
 };
 
+window.cerrarModalEditar = () => document.getElementById('modal-editar').classList.add('hidden');
+
 document.getElementById('form-editar').onsubmit = async (e) => {
     e.preventDefault();
     const id = document.getElementById('edit-id').value;
-    const listaTallas = [];
+    const prodOriginal = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
+
+    const nuevaCompra = parseFloat(document.getElementById('edit-compra').value || 0);
+    const nuevaVenta = parseFloat(document.getElementById('edit-venta').value || 0);
+
+    const listaTallasActualizadas = [];
     TODAS_LAS_TALLAS.forEach(t => {
         const input = document.getElementById(`edit-talla-${t}`);
-        if (input) listaTallas.push({ talla: t, stock: Number(input.value || 0) });
+        if (input) listaTallasActualizadas.push({ talla: t, stock: Number(input.value || 0) });
     });
 
     try {
+        // 🔥 POST para evitar CORS
         const res = await fetch(`${URL_PYTHON}/productos/${id}`, {
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                precioCompra: Number(document.getElementById('edit-compra').value),
-                precioVenta: Number(document.getElementById('edit-venta').value),
-                tallas: listaTallas,
+                precioCompra: nuevaCompra,
+                precioVenta: nuevaVenta,
+                tallas: listaTallasActualizadas,
                 key: EMAILJS_PUBLIC_KEY
             })
         });
-        if (res.ok) {
-            document.getElementById('modal-editar').classList.add('hidden');
+
+        const dataResponse = await res.json();
+        if (res.ok && dataResponse.success) {
+            verificarYEnviarEmailJS(prodOriginal.nombre, listaTallasActualizadas);
+            cerrarModalEditar();
             obtenerProductosAdmin();
-        } else { alert("Error al actualizar."); }
-    } catch (err) { console.error(err); }
+        } else {
+            alert(`⚠️ Error al guardar cambios: ${dataResponse.error || "Fallo en el backend"}`);
+        }
+    } catch (error) {
+        console.error("Error al actualizar producto a través de Python:", error);
+    }
 };
 
 // ==========================================
@@ -246,18 +319,26 @@ document.getElementById('form-editar').onsubmit = async (e) => {
 window.abrirModalEliminar = (id) => {
     const prod = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
     if (!prod) return;
+
     productoSeleccionadoId = id;
     document.getElementById('del-img').src = prod.img;
     document.getElementById('del-nombre').innerText = prod.nombre;
+    document.getElementById('del-sku').innerText = prod.sku || 'SPX-GEN';
     document.getElementById('modal-eliminar').classList.remove('hidden');
 };
 
+window.cerrarModalEliminar = () => document.getElementById('modal-eliminar').classList.add('hidden');
+
 document.getElementById('btn-confirmar-eliminar').onclick = async () => {
+    if (!productoSeleccionadoId) return;
     try {
-        const res = await fetch(`https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos/${productoSeleccionadoId}?key=${EMAILJS_PUBLIC_KEY}`, { method: 'DELETE' });
+        const urlDoc = `https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos/${productoSeleccionadoId}?key=${EMAILJS_PUBLIC_KEY}`;
+        const res = await fetch(urlDoc, { method: 'DELETE' });
         if (res.ok) {
-            document.getElementById('modal-eliminar').classList.add('hidden');
+            cerrarModalEliminar();
             obtenerProductosAdmin();
         }
-    } catch (err) { console.error(err); }
+    } catch (error) {
+        console.error("Error al eliminar producto:", error);
+    }
 };
