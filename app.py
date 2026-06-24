@@ -1,149 +1,103 @@
 import os
-import json
-import firebase_admin
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from firebase_admin import credentials, firestore
-
-# 🔥 SOLUCIÓN CRÍTICA PARA WINDOWS: Desactiva gRPC para evitar que el script se congele
-os.environ["GOOGLE_CLOUD_DISABLE_GRPC"] = "True"
 
 app = Flask(__name__)
 
-# Permitimos que tu GitHub Pages se conecte localmente sin bloqueos de CORS
+# Permitimos la conexión desde tu GitHub Pages sin bloqueos de CORS
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# Variable global para la base de datos
-db = None
+# Credenciales de administrador ocultas en el Backend
+ADMIN_USER = "admin"
+ADMIN_PASS = "spxrt123"
 
-# ==========================================
-# CONFIGURACIÓN DE FIREBASE LOCAL
-# ==========================================
-nombre_archivo_json = 'firebase-adminsdk.json'
-ruta_key = os.path.join(os.path.dirname(__file__), nombre_archivo_json)
-
-if os.path.exists(ruta_key):
+@app.route('/api/login', methods=['POST'])
+def login():
     try:
-        with open(ruta_key, 'r') as f:
-            firebase_config = json.load(f)
+        data = request.json or {}
+        usuario = data.get('user')
+        contrasena = data.get('pass')
         
-        if 'private_key' in firebase_config:
-            firebase_config['private_key'] = firebase_config['private_key'].replace('\\n', '\n')
-            
-        cred = credentials.Certificate(firebase_config)
-        firebase_admin.initialize_app(cred)
-        print("🔥 FIREBASE CONFIGURADO: Credenciales leídas con éxito.")
-        
-        # Inicializamos el cliente de Firestore de forma limpia
-        db = firestore.client()
-        print("⚡ CLIENTE FIRESTORE ACTIVO: Conexión establecida localmente.")
+        if usuario == ADMIN_USER and contrasena == ADMIN_PASS:
+            print("🔐 Login: ¡Acceso concedido!")
+            return jsonify({"success": True, "message": "Acceso concedido"}), 200
+        else:
+            print("❌ Login: Intento de acceso fallido.")
+            return jsonify({"success": False, "error": "Usuario o contraseña incorrectos"}), 401
     except Exception as e:
-        print(f"❌ CRÍTICO: Firebase rechazó el archivo: {e}")
-else:
-    print(f"❌ CRÍTICO: No se encontró el archivo '{nombre_archivo_json}' en esta carpeta.")
+        return jsonify({"success": False, "error": str(e)}), 500
 
-# ==========================================
-# ENDPOINTS DE LA API (CRUD COMPLETO)
-# ==========================================
 
-@app.route('/api/productos', methods=['GET'])
-def obtener_productos():
-    global db
+@app.route('/api/validar-producto', methods=['POST'])
+def validar_producto():
     try:
-        if not db:
-            db = firestore.client()
-            
-        # .get() es drásticamente más estable en Windows local que .stream()
-        productos_ref = db.collection('productos')
-        docs = productos_ref.get()
+        data = request.json or {}
         
-        lista_productos = []
-        for doc in docs:
-            data = doc.to_dict()
-            if not data:
-                continue
-            data['firestore_id'] = doc.id
-            lista_productos.append(data)
+        # 1. Validaciones básicas de campos obligatorios
+        nombre = data.get('nombre', '').strip()
+        descripcion = data.get('desc', '').strip()
+        img = data.get('img', '').strip()
+        precio_compra_raw = data.get('precioCompra')
+        tallas = data.get('tallas', []) # Lista de diccionarios, ej: [{"talla": "26", "stock": 5}]
+
+        if not nombre:
+            return jsonify({"success": False, "error": "El nombre del producto es obligatorio."}), 400
+        if not descripcion:
+            return jsonify({"success": False, "error": "La descripción del producto es obligatoria."}), 400
+        if not img:
+            return jsonify({"success": False, "error": "La URL de la imagen es obligatoria."}), 400
             
-        print(f"✅ ¡Se enviaron {len(lista_productos)} productos al frontend con éxito!")
-        return jsonify(lista_productos), 200
-    except Exception as e:
-        print(f"❌ Error interno en GET /api/productos: {e}")
-        return jsonify({"error": str(e)}), 500
+        # 2. Validar precio de compra
+        try:
+            precio_compra = float(precio_compra_raw)
+            if precio_compra <= 0:
+                return jsonify({"success": False, "error": "El precio de compra debe ser mayor a 0."}), 400
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "error": "El precio de compra debe ser un número válido."}), 400
 
-@app.route('/api/productos', methods=['POST'])
-def agregar_producto():
-    global db
-    try:
-        if not db:
-            db = firestore.client()
-
-        data = request.json
-        precio_compra = float(data.get('precioCompra', 0))
-        precio_venta = round(precio_compra * 1.20, 2) # Regla del +20%
+        # 3. Validar que al menos una talla tenga stock mayor a 0
+        tiene_stock = False
+        tallas_validas = []
         
-        nuevo_producto = {
-            "nombre": data.get('nombre'),
-            "desc": data.get('desc'),
-            "img": data.get('img'),
+        for t in tallas:
+            talla_num = str(t.get('talla', '')).strip()
+            try:
+                stock_num = int(t.get('stock', 0))
+            except (ValueError, TypeError):
+                stock_num = 0
+                
+            if talla_num and stock_num > 0:
+                tiene_stock = True
+                tallas_validas.append({"talla": talla_num, "stock": stock_num})
+            elif talla_num:
+                tallas_validas.append({"talla": talla_num, "stock": 0})
+
+        if not tiene_stock:
+            return jsonify({"success": False, "error": "Debes agregar al menos una talla con stock disponible mayor a 0."}), 400
+
+        # 4. Procesamiento lógico (Regla del +20% y Generación de SKU único)
+        precio_venta = round(precio_compra * 1.20, 2)
+        sku_generado = "SPX-" + str(os.urandom(2).hex().upper())
+
+        # Estructura limpia y lista para Firebase
+        producto_procesado = {
+            "nombre": nombre,
+            "desc": descripcion,
+            "img": img,
             "precioCompra": precio_compra,
             "precioVenta": precio_venta,
-            "sku": "SPX-" + str(os.urandom(2).hex().upper()),
-            "tallas": data.get('tallas', [])
+            "sku": sku_generado,
+            "tallas": tallas_validas
         }
-        
-        doc_ref = db.collection('productos').document()
-        doc_ref.set(nuevo_producto)
-        print(f"✨ Producto creado con éxito: {nuevo_producto['nombre']}")
-        return jsonify({"message": "Creado con éxito", "producto": nuevo_producto}), 201
+
+        print(f"✅ Producto validado con éxito y SKU generado: {sku_generado}")
+        return jsonify({"success": True, "producto": producto_procesado}), 200
+
     except Exception as e:
-        print(f"❌ Error interno en POST /api/productos: {e}")
-        return jsonify({"error": str(e)}), 500
+        print(f"❌ Error en validación: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/productos/<id>', methods=['PUT'])
-def editar_producto(id):
-    global db
-    try:
-        if not db:
-            db = firestore.client()
-
-        data = request.json
-        doc_ref = db.collection('productos').document(id)
-        prod_doc = doc_ref.get()
-        
-        if not prod_doc.exists:
-            return jsonify({"error": "No encontrado"}), 404
-            
-        prod_original = prod_doc.to_dict()
-        precio_compra_original = float(prod_original.get('precioCompra', 0))
-        
-        actualizacion = {
-            "precioVenta": round(precio_compra_original * 1.20, 2),
-            "tallas": data.get('tallas', [])
-        }
-        
-        doc_ref.update(actualizacion)
-        print(f"🔧 Producto actualizado con éxito: ID {id}")
-        return jsonify({"message": "Actualizado"}), 200
-    except Exception as e:
-        print(f"❌ Error interno en PUT /api/productos: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/productos/<id>', methods=['DELETE'])
-def eliminar_producto(id):
-    global db
-    try:
-        if not db:
-            db = firestore.client()
-
-        doc_ref = db.collection('productos').document(id)
-        doc_ref.delete()
-        print(f"🗑️ Producto eliminado con éxito: ID {id}")
-        return jsonify({"message": "Eliminado"}), 200
-    except Exception as e:
-        print(f"❌ Error interno en DELETE /api/productos: {e}")
-        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    # Arranca localmente en el puerto 5000 con autorecarga activa (debug=True)
+    print("🚀 Servidor de Validación Local SPXRT corriendo en el puerto 5000...")
     app.run(host='0.0.0.0', port=5000, debug=True)
