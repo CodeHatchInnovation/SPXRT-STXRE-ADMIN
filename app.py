@@ -65,12 +65,12 @@ def validar_producto():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# 🔥 NUEVA RUTA DE CONTINGENCIA ANTI-403 FORBIDDEN
+# 🔥 RUTA CORREGIDA CON TU ID DE PROYECTO REAL (e-commerce-2ff74)
 @app.route('/api/productos', methods=['GET'])
 def obtener_productos_contingencia():
     try:
-        # Petición directa de servidor a servidor usando el formato de exportación JSON
-        url = "https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos?alt=json"
+        # Apuntamos directamente a tu ID de proyecto real para traer los Nike Total 90 y los demás documentos
+        url = "https://firestore.googleapis.com/v1/projects/e-commerce-2ff74/databases/(default)/documents/productos?alt=json"
         res = requests.get(url)
         data = res.json()
         
