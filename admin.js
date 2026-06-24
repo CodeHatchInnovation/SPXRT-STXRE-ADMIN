@@ -1,7 +1,8 @@
 let productosAdmin = [];
 let productoSeleccionadoId = null;
 
-const URL_API = "https://spxrt-stxre-admin.onrender.com/api/productos";
+// URL apuntando a tu servidor de Python corriendo de forma local
+const URL_API = "http://localhost:5000/api/productos";
 const TODAS_LAS_TALLAS = ['25', '26', '27', '28', 'CH', 'M', 'G', 'XG', 'Unitalla'];
 
 // ==========================================
@@ -15,10 +16,8 @@ if (typeof emailjs !== 'undefined') {
     emailjs.init(EMAILJS_PUBLIC_KEY);
 }
 
-// Función encargada de disparar los correos reales desde el Front
 function verificarYEnviarEmailJS(nombreProducto, listaTallas) {
     listaTallas.forEach(t => {
-        // Regla: stock mayor a 0 pero menor a 10 piezas
         if (t.stock > 0 && t.stock < 10) {
             const templateParams = {
                 product_name: nombreProducto,
@@ -78,7 +77,8 @@ async function obtenerProductosAdmin() {
         productosAdmin = await res.json();
         renderizarGridAdmin(productosAdmin);
     } catch (error) {
-        console.error("Error conectando con Python:", error);
+        console.error("Error conectando con Python Local:", error);
+        alert("No se pudo conectar con el servidor local de Python. Asegúrate de correr 'python app.py' en tu terminal.");
     }
 }
 
@@ -94,6 +94,9 @@ function renderizarGridAdmin(lista) {
             ? tallasActivas.map(t => `<span class="bg-purple-50 text-[#7c3aed] px-1.5 py-0.5 rounded text-[10px] font-bold">${t.talla}: ${t.stock}</span>`).join(' ')
             : `<span class="text-red-400 italic text-[10px] font-bold">Agotado</span>`;
 
+        // Usamos p.firestore_id para identificar unívocamente el documento en las acciones
+        const idDocumento = p.firestore_id || p.id;
+
         const card = document.createElement('div');
         card.className = "product-card bg-white border border-gray-100 rounded-2xl p-5 flex flex-col relative group shadow-sm";
         card.innerHTML = `
@@ -108,8 +111,8 @@ function renderizarGridAdmin(lista) {
                 <div class="flex justify-between border-t border-gray-50 pt-1 mt-1"><span>Total Stock:</span><span class="font-medium text-gray-800">${stockTotal} pzas</span></div>
             </div>
             <div class="pt-2 grid grid-cols-4 gap-2">
-                <button onclick="abrirModalEditar('${p.id}')" class="col-span-3 py-2 border border-purple-200 text-[#7c3aed] text-xs font-bold rounded-xl bg-purple-50/30 hover:bg-purple-50 transition-all">Editar</button>
-                <button onclick="abrirModalEliminar('${p.id}')" class="py-2 border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-100 rounded-xl transition-all flex items-center justify-center"><i class="ph ph-trash text-base"></i></button>
+                <button onclick="abrirModalEditar('${idDocumento}')" class="col-span-3 py-2 border border-purple-200 text-[#7c3aed] text-xs font-bold rounded-xl bg-purple-50/30 hover:bg-purple-50 transition-all">Editar</button>
+                <button onclick="abrirModalEliminar('${idDocumento}')" class="py-2 border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-100 rounded-xl transition-all flex items-center justify-center"><i class="ph ph-trash text-base"></i></button>
             </div>
         `;
         grid.appendChild(card);
@@ -152,31 +155,33 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
         tallas: listaTallas
     };
 
-    const res = await fetch(URL_API, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nuevo)
-    });
+    try {
+        const res = await fetch(URL_API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(nuevo)
+        });
 
-    if (res.ok) {
-        const dataJson = await res.json();
-        // Mandamos a EmailJS a validar si el nuevo producto entra con stock bajo
-        verificarYEnviarEmailJS(nuevo.nombre, listaTallas);
-        cerrarModalAgregar();
-        obtenerProductosAdmin();
+        if (res.ok) {
+            verificarYEnviarEmailJS(nuevo.nombre, listaTallas);
+            cerrarModalAgregar();
+            obtenerProductosAdmin();
+        }
+    } catch (error) {
+        console.error("Error al agregar producto:", error);
     }
 };
 
 // ==========================================
-// ACCIONES: MODAL EDITAR (CON DISEÑO BLOQUEADO)
+// ACCIONES: MODAL EDITAR
 // ==========================================
 window.abrirModalEditar = (id) => {
-    const prod = productosAdmin.find(p => p.id === id);
+    const prod = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
     if (!prod) return;
 
-    document.getElementById('edit-id').value = prod.id;
+    const idDocumento = prod.firestore_id || prod.id;
+    document.getElementById('edit-id').value = idDocumento;
     
-    // ASIGNAR INFORMACIÓN ACTUAL Y APLICAR ESTILO VISUAL DE BLOQUEO (UX)
     const inputNombre = document.getElementById('edit-nombre');
     inputNombre.value = prod.nombre;
     inputNombre.disabled = true; 
@@ -192,7 +197,6 @@ window.abrirModalEditar = (id) => {
     inputVenta.disabled = true;
     inputVenta.className = "w-full px-4 py-2.5 border border-purple-200 rounded-xl text-sm bg-purple-50/60 cursor-not-allowed font-bold text-[#7c3aed] select-none focus:ring-0 focus:border-purple-200";
 
-    // Cargar existencias actuales en los inputs editables de las tallas
     TODAS_LAS_TALLAS.forEach(t => {
         const objTalla = prod.tallas ? prod.tallas.find(x => x.talla === t) : null;
         document.getElementById(`edit-talla-${t}`).value = objTalla ? objTalla.stock : 0;
@@ -206,7 +210,7 @@ window.cerrarModalEditar = () => document.getElementById('modal-editar').classLi
 document.getElementById('form-editar').onsubmit = async (e) => {
     e.preventDefault();
     const id = document.getElementById('edit-id').value;
-    const prodOriginal = productosAdmin.find(p => p.id === id);
+    const prodOriginal = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
 
     const listaTallasActualizadas = [];
     TODAS_LAS_TALLAS.forEach(t => {
@@ -214,17 +218,20 @@ document.getElementById('form-editar').onsubmit = async (e) => {
         listaTallasActualizadas.push({ talla: t, stock: stockInput });
     });
 
-    const res = await fetch(`${URL_API}/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tallas: listaTallasActualizadas })
-    });
+    try {
+        const res = await fetch(`${URL_API}/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tallas: listaTallasActualizadas })
+        });
 
-    if (res.ok) {
-        // Al quedar guardado en Python con éxito, JS detona EmailJS para evaluar si manda correo
-        verificarYEnviarEmailJS(prodOriginal.nombre, listaTallasActualizadas);
-        cerrarModalEditar();
-        obtenerProductosAdmin();
+        if (res.ok) {
+            verificarYEnviarEmailJS(prodOriginal.nombre, listaTallasActualizadas);
+            cerrarModalEditar();
+            obtenerProductosAdmin();
+        }
+    } catch (error) {
+        console.error("Error al actualizar producto:", error);
     }
 };
 
@@ -232,7 +239,7 @@ document.getElementById('form-editar').onsubmit = async (e) => {
 // ACCIONES: MODAL ELIMINAR
 // ==========================================
 window.abrirModalEliminar = (id) => {
-    const prod = productosAdmin.find(p => p.id === id);
+    const prod = productosAdmin.find(p => (p.firestore_id === id || p.id === id));
     if (!prod) return;
 
     productoSeleccionadoId = id;
@@ -246,9 +253,13 @@ window.cerrarModalEliminar = () => document.getElementById('modal-eliminar').cla
 
 document.getElementById('btn-confirmar-eliminar').onclick = async () => {
     if (!productoSeleccionadoId) return;
-    const res = await fetch(`${URL_API}/${productoSeleccionadoId}`, { method: 'DELETE' });
-    if (res.ok) {
-        cerrarModalEliminar();
-        obtenerProductosAdmin();
+    try {
+        const res = await fetch(`${URL_API}/${productoSeleccionadoId}`, { method: 'DELETE' });
+        if (res.ok) {
+            cerrarModalEliminar();
+            obtenerProductosAdmin();
+        }
+    } catch (error) {
+        console.error("Error al eliminar producto:", error);
     }
 };
