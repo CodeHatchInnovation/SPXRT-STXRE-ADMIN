@@ -283,9 +283,9 @@ document.getElementById('form-editar').onsubmit = async (e) => {
     });
 
     try {
-        // 🔥 Envío seguro delegando el proceso de actualización PATCH a Python para evadir el bloqueo CORS
+        // 🔥 Enviamos usando POST para burlar las restricciones preflight de CORS en el navegador
         const res = await fetch(`${URL_PYTHON}/productos/${id}`, {
-            method: 'PATCH',
+            method: 'POST', 
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 precioCompra: nuevaCompra,
