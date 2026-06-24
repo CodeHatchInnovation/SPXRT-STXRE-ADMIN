@@ -6,7 +6,7 @@ const URL_PYTHON = "http://localhost:5000/api"; // Servidor local para lógica
 const TODAS_LAS_TALLAS = ['25', '26', '27', '28', 'CH', 'M', 'G', 'XG', 'Unitalla'];
 
 // ==========================================
-// CONFIGURACIÓN DE EMAILJS (REAL)
+// CONFIGURACIÓN DE EMAILJS (REAL) Y API KEY
 // ==========================================
 const EMAILJS_PUBLIC_KEY = "DDMzin7mNH5wWjXBE";   
 const EMAILJS_SERVICE_ID = "service_jcmou3p";   
@@ -86,7 +86,9 @@ document.getElementById('btn-logout').onclick = () => {
 // ==========================================
 async function obtenerProductosAdmin() {
     try {
-        const res = await fetch("https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos"); 
+        // 🔥 Agregamos la clave pública autorizada para destruir el error 403 de lectura
+        const urlFirestore = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos?key=${EMAILJS_PUBLIC_KEY}`;
+        const res = await fetch(urlFirestore); 
         const data = await res.json();
         
         productosAdmin = data.documents ? data.documents.map(doc => {
@@ -206,7 +208,8 @@ document.getElementById('form-agregar').onsubmit = async (e) => {
         }
 
         const productoProcesado = respuestaPython.producto;
-        const urlFirestore = "https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos";
+        // 🔥 Inyectamos el key aquí también por seguridad en inserciones
+        const urlFirestore = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos?key=${EMAILJS_PUBLIC_KEY}`;
         
         const bodyFirestore = {
             fields: {
@@ -297,7 +300,8 @@ document.getElementById('form-editar').onsubmit = async (e) => {
     });
 
     try {
-        const urlDoc = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos/${id}?updateMask.fieldPaths=tallas`;
+        // 🔥 Inyectamos la API Key en la ruta de actualización PATCH
+        const urlDoc = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos/${id}?updateMask.fieldPaths=tallas&key=${EMAILJS_PUBLIC_KEY}`;
         
         const bodyFirestore = {
             fields: {
@@ -351,7 +355,8 @@ window.cerrarModalEliminar = () => document.getElementById('modal-eliminar').cla
 document.getElementById('btn-confirmar-eliminar').onclick = async () => {
     if (!productoSeleccionadoId) return;
     try {
-        const urlDoc = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos/${productoSeleccionadoId}`;
+        // 🔥 Inyectamos la API Key en la ruta DELETE
+        const urlDoc = `https://firestore.googleapis.com/v1/projects/spxrt-stxre/databases/(default)/documents/productos/${productoSeleccionadoId}?key=${EMAILJS_PUBLIC_KEY}`;
         const res = await fetch(urlDoc, { method: 'DELETE' });
         if (res.ok) {
             cerrarModalEliminar();
