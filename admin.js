@@ -18,17 +18,38 @@ if (typeof emailjs !== 'undefined') {
 
 function verificarYEnviarEmailJS(nombreProducto, listaTallas) {
     listaTallas.forEach(t => {
+        // Creamos la llave única igual que antes
+        const idAlerta = `alerta_${nombreProducto}_${t.talla}_${t.stock}`;
+
+        // 1. Lógica para enviar alerta si está bajo
         if (t.stock > 0 && t.stock < 10) {
+            // Si ya enviamos una alerta para este nivel de stock, no repetimos
+            if (localStorage.getItem(idAlerta)) return;
+
             const templateParams = {
                 product_name: nombreProducto,
                 size_name: t.talla,
                 stock_current: t.stock,
-                to_email: "brandonurielescalonagarcia@gmail.com" 
+                to_email: "brandonurielescalonagarcia@gmail.com"
             };
 
             emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams)
-                .then(() => console.log(`✅ EmailJS envió alerta para ${nombreProducto} [Talla: ${t.talla}]`))
-                .catch(err => console.error("❌ Error en EmailJS:", err));
+                .then(() => {
+                    console.log("✅ Alerta enviada");
+                    localStorage.setItem(idAlerta, "enviado");
+                })
+                .catch(err => console.error("❌ Error:", err));
+        } 
+        // 2. Lógica para limpiar el historial si el stock se recupera
+        else if (t.stock >= 10) {
+            // Buscamos y borramos cualquier alerta previa de este producto/talla 
+            // Esto es un poco más avanzado: limpiaremos todas las claves que empiecen con el nombre y talla
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.includes(`alerta_${nombreProducto}_${t.talla}`)) {
+                    localStorage.removeItem(key);
+                }
+            }
         }
     });
 }
