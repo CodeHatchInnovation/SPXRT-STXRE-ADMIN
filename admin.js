@@ -349,3 +349,30 @@ document.getElementById('btn-confirmar-eliminar').onclick = async () => {
         console.error("Error al eliminar producto:", error);
     }
 };
+
+// 🔥 REVISIÓN AUTOMÁTICA CADA MINUTO
+setInterval(async () => {
+    console.log("🕒 Revisando stock...");
+    
+    // Volvemos a obtener los productos para tener los datos más recientes
+    try {
+        const res = await fetch(`${URL_PYTHON}/productos`);
+        const data = await res.json();
+        
+        if (data.success && data.productos) {
+            data.productos.forEach(p => {
+                // Revisamos cada talla de cada producto
+                p.tallas.forEach(t => {
+                    // Si el stock está entre 1 y 9, enviamos alerta
+                    if (t.stock > 0 && t.stock < 10) {
+                        // Opcional: Podrías guardar un "historial de alertas enviadas" 
+                        // en el localStorage para no mandar el mismo correo cada minuto
+                        verificarYEnviarEmailJS(p.nombre, [t]);
+                    }
+                });
+            });
+        }
+    } catch (error) {
+        console.error("❌ Error en la revisión automática:", error);
+    }
+}, 60000); // 60000 milisegundos = 1 minuto
